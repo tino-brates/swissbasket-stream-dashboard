@@ -1,0 +1,4 @@
+[
+  { "arena": "Salle du Rocher", "vendor": "Keemotion", "status": "Signal unstable", "note": "Cam 2 freeze" },
+  { "arena": "Provence Arena", "vendor": "Synergy", "status": "No ingest", "note": "Encoder offline" }
+]
