@@ -1,11 +1,10 @@
 {
   "version": 2,
-  "builds": [
-    { "src": "api/*.js", "use": "@vercel/node" }
-  ],
   "routes": [
     { "src": "^/api/(.*)$", "dest": "/api/$1" },
-    { "handle": "filesystem" },
-    { "src": "/(.*)", "dest": "/index.html" }
+    { "src": "^/(styles\\.css)$", "dest": "/styles.css" },
+    { "src": "^/(app\\.js)$", "dest": "/app.js" },
+    { "src": "^/(favicon\\.ico)$", "dest": "/favicon.ico" },
+    { "src": ".*", "dest": "/api/render" }
   ]
 }
