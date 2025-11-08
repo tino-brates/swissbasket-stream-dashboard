@@ -41,10 +41,13 @@
 
   <section id="upcoming" class="panel">
     <div class="filters">
-      <label><input type="checkbox" class="flt" value="Keemotion" checked> Keemotion</label>
-      <label><input type="checkbox" class="flt" value="Swish Live" checked> Swish Live</label>
-      <label><input type="checkbox" class="flt" value="Manual" checked> Manual</label>
-      <label><input type="checkbox" class="flt" value="TV" checked> TV</label>
+      <select id="prodFilter">
+        <option value="ALL">Tous (streamés)</option>
+        <option value="Keemotion">Keemotion</option>
+        <option value="Swish Live">Swish Live</option>
+        <option value="Manual">Manual</option>
+        <option value="TV">TV</option>
+      </select>
       <input type="search" id="searchInput" placeholder="Rechercher équipe, arène, prod">
     </div>
     <table class="table">
@@ -55,7 +58,6 @@
           <th>Équipe A</th>
           <th>Équipe B</th>
           <th>Arène</th>
-          <th>Méthode</th>
           <th>Production</th>
           <th>YT Event</th>
         </tr>
