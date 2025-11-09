@@ -22,10 +22,11 @@ function normProd(s){const v=(s||'').toUpperCase();if(!v)return'';if(v.includes(
 function prodGroup(p){if(p==='Swish Live'||p==='Manual')return'SwishManual';return p||''}
 function badgeForStatus(s){const map={perfect:'status-perfect',good:'status-good',bad:'status-bad',nodata:'status-nodata'};return map[s]||'status-nodata'}
 
+/* ---------- LIVE NOW (YouTube) ---------- */
 function renderLive(){
   const box=document.getElementById('liveNow');box.innerHTML='';
   if(!state.data.live.length){
-    let next3=(state.data.ytUpcoming||[])
+    const next3=(state.data.ytUpcoming||[])
       .filter(x=>isInFuture(x.scheduledStart))
       .sort((a,b)=>new Date(a.scheduledStart)-new Date(b.scheduledStart))
       .slice(0,3);
@@ -57,6 +58,7 @@ function renderLive(){
   });
 }
 
+/* ---------- ISSUES ---------- */
 function renderIssues(){
   const box=document.getElementById('issues');box.innerHTML='';
   if(!state.data.issues.length){const e=document.createElement('div');e.className='muted';e.textContent='Aucun problème signalé.';box.appendChild(e);return}
@@ -67,6 +69,7 @@ function renderIssues(){
   });
 }
 
+/* ---------- À VENIR (90 min) — YouTube ---------- */
 function renderNext90(){
   const box=document.getElementById('next90');box.innerHTML='';
   const soon=(state.data.ytUpcoming||[])
@@ -84,13 +87,15 @@ function renderNext90(){
   });
 }
 
+/* ---------- HEALTH (YT ingest) ---------- */
 function renderHealth(){
   const box=document.getElementById('ytHealth');box.innerHTML='';
   if(!state.data.live.length){return}
   if(!state.data.health.length){return}
   state.data.health.forEach(x=>{
     const since=x.lastUpdate?timeSince(x.lastUpdate):'';
-    const el=document.createElement('div');el.className='item';
+    const el=document.createElement('div');
+    el.className='item';
     el.innerHTML=`
       <div style="display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;width:100%;">
         <div style="flex:1;min-width:140px;">${x.name}</div>
@@ -103,6 +108,7 @@ function renderHealth(){
   });
 }
 
+/* ---------- CALENDRIER (sheet) ---------- */
 function inActiveTabRange(d){
   const t=new Date(d).getTime();
   const now=new Date();
@@ -144,28 +150,34 @@ function renderUpcoming(){
   });
 }
 
+/* ---------- LOAD / EVENTS ---------- */
 function renderAll(){renderLive();renderIssues();renderNext90();renderHealth();renderUpcoming()}
 function setLastUpdate(){const el=document.getElementById('lastUpdate');const d=new Date();el.textContent=d.toLocaleTimeString('fr-CH',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}
-async function fetchJSON(url){const r=await fetch(url);if(!r.ok)throw new Error('http');return await r.json()}
-async function loadData(){
-  const [livePayload,issues,upcoming,health]=await Promise.all([
-    fetchJSON('/api/live'),
-    fetchJSON('/api/issues'),
-    fetchJSON('/api/upcoming'),
-    fetchJSON('/api/health')
+async function fetchJSON(url){const r=await fetch(url,{cache:'no-store'});if(!r.ok)throw new Error('http');return await r.json()}
+
+async function loadCalendars(){ // sheet & issues & health si tu veux
+  const [upcoming]=await Promise.all([
+    fetchJSON('/api/upcoming')
   ]);
-  state.data.live = livePayload.live || [];
-  state.data.ytUpcoming = livePayload.upcoming || [];
-  state.data.issues = issues.items || [];
-  state.data.upcoming = upcoming.items || [];
-  state.data.health = health.items || [];
-  renderAll();setLastUpdate();
+  state.data.upcoming=upcoming.items||[];
+  renderUpcoming(); setLastUpdate();
 }
 
-document.getElementById('refreshBtn').addEventListener('click',()=>{loadData()});
+async function loadYouTube(){
+  const livePayload=await fetchJSON('/api/live');
+  state.data.live = livePayload.live || [];
+  state.data.ytUpcoming = livePayload.upcoming || [];
+  renderLive(); renderNext90(); setLastUpdate();
+}
+
+document.getElementById('refreshBtn').addEventListener('click',()=>{loadCalendars();loadYouTube()});
 document.getElementById('prodFilter').addEventListener('change',e=>{state.filterProd=e.target.value;renderUpcoming()});
 document.getElementById('searchInput').addEventListener('input',e=>{state.search=e.target.value;renderUpcoming()});
 document.getElementById('tabRange1').addEventListener('click',()=>{state.activeUpcomingTab='RANGE1';document.getElementById('tabRange1').classList.add('active');document.getElementById('tabRange2').classList.remove('active');renderUpcoming()});
 document.getElementById('tabRange2').addEventListener('click',()=>{state.activeUpcomingTab='RANGE2';document.getElementById('tabRange2').classList.add('active');document.getElementById('tabRange1').classList.remove('active');renderUpcoming()});
 
-loadData();setInterval(loadData,10000);
+// initial load
+loadCalendars(); loadYouTube();
+// intervals séparés: YouTube plus lent (quota), Sheet rapide
+setInterval(loadCalendars, 10000);
+setInterval(loadYouTube, 60000);

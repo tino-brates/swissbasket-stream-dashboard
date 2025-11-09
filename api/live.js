@@ -4,6 +4,14 @@ const YT_SEARCH = "https://www.googleapis.com/youtube/v3/search";
 const YT_VIDEOS = "https://www.googleapis.com/youtube/v3/videos";
 const YT_CHANNELS = "https://www.googleapis.com/youtube/v3/channels";
 
+let CACHE = {
+  ts: 0,
+  data: { live: [], upcoming: [] },
+  backoffUntil: 0
+};
+const CACHE_TTL_MS = 120000; // 2 min
+const BACKOFF_MS = 300000;   // 5 min en cas de quotaExceeded
+
 function pickCreds() {
   const P = {
     client_id: process.env.YT_PLAYGROUND_CLIENT_ID,
@@ -44,14 +52,22 @@ async function broadcasts(accessToken, status) {
   u.searchParams.set("mine", "true");
   u.searchParams.set("maxResults", "50");
   const r = await fetch(u.toString(), { headers: { Authorization: `Bearer ${accessToken}` }});
-  if (!r.ok) return [];
+  if (!r.ok) {
+    const txt = await r.text();
+    const isQuota = txt.includes("quota") || txt.includes("quotaExceeded");
+    if (isQuota) {
+      const now = Date.now();
+      CACHE.backoffUntil = Math.max(CACHE.backoffUntil, now + BACKOFF_MS);
+    }
+    throw new Error("broadcasts_" + status);
+  }
   const j = await r.json();
   return j.items || [];
 }
 
 async function channelIdForMine(accessToken) {
   const u = new URL(YT_CHANNELS);
-  u.searchParams.set("part", "id,snippet");
+  u.searchParams.set("part", "id");
   u.searchParams.set("mine", "true");
   const r = await fetch(u.toString(), { headers: { Authorization: `Bearer ${accessToken}` }});
   if (!r.ok) return null;
@@ -67,7 +83,6 @@ async function searchByEventType(accessToken, channelId, eventType) {
   u.searchParams.set("eventType", eventType); // live | upcoming
   u.searchParams.set("maxResults", "50");
   if (channelId) u.searchParams.set("channelId", channelId);
-  // (on n'utilise pas forMine ici pour la variante fallback)
   const r = await fetch(u.toString(), { headers: { Authorization: `Bearer ${accessToken}` }});
   if (!r.ok) return [];
   const j = await r.json();
@@ -97,10 +112,25 @@ async function videosDetails(accessToken, ids) {
 }
 
 export default async function handler(req, res) {
+  // cache CDN côté Vercel (ISR-like)
+  res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=300");
+
+  const now = Date.now();
+  const cacheFresh = (now - CACHE.ts) < CACHE_TTL_MS;
+
+  if (cacheFresh) {
+    return res.status(200).json(CACHE.data);
+  }
+
+  // backoff si quota dépassé récemment
+  if (now < CACHE.backoffUntil) {
+    return res.status(200).json(CACHE.data);
+  }
+
   try {
     const access = await getAccessToken();
 
-    // 1) voie officielle : liveBroadcasts (voit privé/unlisted si bon compte)
+    // 1) voie officielle : liveBroadcasts
     const [bActive, bUpcoming] = await Promise.all([
       broadcasts(access, "active"),
       broadcasts(access, "upcoming")
@@ -118,7 +148,7 @@ export default async function handler(req, res) {
       url: `https://www.youtube.com/watch?v=${b?.id}`
     })).filter(x => !!x.scheduledStart);
 
-    // 2) fallback si rien : search + videos (peut au moins remonter les publics/unlisted)
+    // 2) fallback (public/unlisted) si rien
     if (live.length === 0 || upcoming.length === 0) {
       const chId = await channelIdForMine(access);
 
@@ -149,8 +179,11 @@ export default async function handler(req, res) {
       }
     }
 
-    res.status(200).json({ live, upcoming });
+    CACHE.data = { live, upcoming };
+    CACHE.ts = now;
+    return res.status(200).json(CACHE.data);
   } catch (e) {
-    res.status(200).json({ live: [], upcoming: [], error: String(e) });
+    // en cas d’erreur, on sert le cache si dispo
+    return res.status(200).json(CACHE.data);
   }
 }
