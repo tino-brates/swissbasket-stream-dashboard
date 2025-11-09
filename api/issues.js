@@ -1,4 +1,5 @@
 export default async function handler(req, res) {
+  // --- ENV ---
   const {
     KEEMOTION_API_BASE = 'https://pointguard.keemotion.com',
     KEEMOTION_AUTH_SCHEME = 'OAuth2',
@@ -9,18 +10,23 @@ export default async function handler(req, res) {
   } = process.env;
 
   const debug = req.query.debug === '1';
+  const force = req.query.force === '1';
 
+  // Pas de cache côté Vercel
+  res.setHeader('Cache-Control', 'no-store');
+
+  // --- HEADERS copiés du Network Keemotion ---
   const H = {
     'Authorization': `${KEEMOTION_AUTH_SCHEME} ${KEEMOTION_TOKEN}`,
-    'Keemotion-Agent': 'KeecastWeb 5.24.2',
+    'Keemotion-Agent': 'KeecastWeb 5.24.2', // reproduit l’agent du navigateur Sporthub
     'Origin': KEEMOTION_ORIGIN,
     'Referer': KEEMOTION_REFERER,
     'Accept': 'application/json',
     'Accept-Language': KEEMOTION_ACCEPT_LANGUAGE,
-    'User-Agent': 'Mozilla/5.0',
+    'User-Agent': 'Mozilla/5.0', // peu importe ici
   };
 
-  async function fetchAny(path) {
+  async function fetchJSON(path) {
     const url = `${KEEMOTION_API_BASE}${path}`;
     let bodyText = null;
     let json = null;
@@ -36,16 +42,12 @@ export default async function handler(req, res) {
     }
   }
 
-  // 1) Arenas (liste des salles)
-  const arenasResp = await fetchAny('/game/arenas?inactive=false&can_schedule=true&sort=name,asc&page=0,100');
+  // Endpoints qu’on a vu dans Network
+  const arenasResp = await fetchJSON('/game/arenas?inactive=false&can_schedule=true&sort=name,asc&page=0,100');
+  const bwInfoResp = await fetchJSON('/bandwidth-info');
+  const bwMetricsResp = await fetchJSON('/bandwidth-metrics?from=3');
 
-  // 2) Infos bande passante par arène
-  const bwInfoResp = await fetchAny('/bandwidth-info');
-
-  // 3) Métriques bande passante des N derniers jours (3 par défaut)
-  const bwMetricsResp = await fetchAny('/bandwidth-metrics?from=3');
-
-  // Utilitaires
+  // Helper pour récupérer un tableau quelle que soit la forme
   const toArray = (data) => {
     if (!data) return [];
     if (Array.isArray(data)) return data;
@@ -58,25 +60,23 @@ export default async function handler(req, res) {
   const bwInfo = toArray(bwInfoResp.json);
   const bwMetrics = toArray(bwMetricsResp.json);
 
-  // Heuristique de détection des problèmes (à ajuster en fonction du debug réel)
-  const BAD_WORDS = /(unstable|no\s?ingest|no\s?data|offline|freeze|bad)/i;
+  // Heuristique sans “bad” (évite ‘Baden’)
+  const BAD_WORDS = /(signal\s*unstable|unstable|no\s?ingest|no\s?data|encoder\s*offline|offline|freeze|freezed?|critical|alert)/i;
 
-  function flatText(obj, depth = 2) {
+  const flatText = (obj, depth = 2) => {
     if (!obj || depth < 0) return '';
     if (typeof obj === 'string') return obj;
     if (typeof obj === 'number' || typeof obj === 'boolean') return String(obj);
     if (Array.isArray(obj)) return obj.map(v => flatText(v, depth - 1)).join(' ');
     return Object.values(obj).map(v => flatText(v, depth - 1)).join(' ');
-  }
+  };
 
-  function pickName(obj) {
-    return obj?.name || obj?.arenaName || obj?.arena || obj?.title || obj?.id || 'Arena';
-  }
+  const pickName = (obj) =>
+    obj?.name || obj?.arenaName || obj?.arena || obj?.title || obj?.id || 'Arena';
 
-  // On tente de fabriquer une liste "problèmes" en combinant les sources
   const problems = [];
 
-  // a) depuis arenas
+  // a) arenas
   arenas.forEach(a => {
     const text = flatText(a);
     if (BAD_WORDS.test(text)) {
@@ -85,12 +85,12 @@ export default async function handler(req, res) {
         vendor: 'Keemotion',
         status: 'issue',
         note: text.slice(0, 160),
-        source: 'arenas'
+        source: 'arenas',
       });
     }
   });
 
-  // b) depuis bandwidth-info
+  // b) bandwidth-info
   bwInfo.forEach(b => {
     const text = flatText(b);
     if (BAD_WORDS.test(text)) {
@@ -99,12 +99,12 @@ export default async function handler(req, res) {
         vendor: 'Keemotion',
         status: 'issue',
         note: text.slice(0, 160),
-        source: 'bandwidth-info'
+        source: 'bandwidth-info',
       });
     }
   });
 
-  // c) depuis bandwidth-metrics (si métriques indiquent "no data" / "offline" / "unstable")
+  // c) bandwidth-metrics
   bwMetrics.forEach(m => {
     const text = flatText(m);
     if (BAD_WORDS.test(text)) {
@@ -113,10 +113,23 @@ export default async function handler(req, res) {
         vendor: 'Keemotion',
         status: 'issue',
         note: text.slice(0, 160),
-        source: 'bandwidth-metrics'
+        source: 'bandwidth-metrics',
       });
     }
   });
+
+  // Mode “force” pour tester l’UI : on renvoie 3 premières arènes
+  if (force && problems.length === 0) {
+    arenas.slice(0, 3).forEach(a => {
+      problems.push({
+        arena: pickName(a),
+        vendor: 'Keemotion',
+        status: 'issue',
+        note: flatText(a).slice(0, 160),
+        source: 'force',
+      });
+    });
+  }
 
   if (debug) {
     return res.status(200).json({
@@ -125,21 +138,18 @@ export default async function handler(req, res) {
         arenas: {
           status: arenasResp.status,
           url: arenasResp.url,
-          type: Array.isArray(arenasResp.json) ? 'array' : typeof arenasResp.json,
           count: arenas.length,
           sample: arenas.slice(0, 3),
         },
         bandwidthInfo: {
           status: bwInfoResp.status,
           url: bwInfoResp.url,
-          type: Array.isArray(bwInfoResp.json) ? 'array' : typeof bwInfoResp.json,
           count: bwInfo.length,
           sample: bwInfo.slice(0, 3),
         },
         bandwidthMetrics: {
           status: bwMetricsResp.status,
           url: bwMetricsResp.url,
-          type: Array.isArray(bwMetricsResp.json) ? 'array' : typeof bwMetricsResp.json,
           count: bwMetrics.length,
           sample: bwMetrics.slice(0, 3),
         },
@@ -148,8 +158,8 @@ export default async function handler(req, res) {
           'Keemotion-Agent': 'KeecastWeb 5.24.2',
           Origin: KEEMOTION_ORIGIN,
           Referer: KEEMOTION_REFERER,
-        }
-      }
+        },
+      },
     });
   }
 
