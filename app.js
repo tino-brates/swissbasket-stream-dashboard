@@ -22,7 +22,6 @@ function normProd(s){const v=(s||'').toUpperCase();if(!v)return'';if(v.includes(
 function prodGroup(p){if(p==='Swish Live'||p==='Manual')return'SwishManual';return p||''}
 function badgeForStatus(s){const map={perfect:'status-perfect',good:'status-good',bad:'status-bad',nodata:'status-nodata'};return map[s]||'status-nodata'}
 
-/* ---------- LIVE NOW (YouTube -> fallback sheet) ---------- */
 function renderLive(){
   const box=document.getElementById('liveNow');box.innerHTML='';
   if(state.data.live.length){
@@ -38,12 +37,15 @@ function renderLive(){
     return;
   }
 
-  // fallback: YouTube upcoming -> sinon sheet
   let next3=(state.data.ytUpcoming||[])
-    .filter(x=>isInFuture(x.scheduledStart))
-    .sort((a,b)=>new Date(a.scheduledStart)-new Date(b.scheduledStart))
+    .filter(x=>x.scheduledStart?isInFuture(x.scheduledStart):true)
+    .sort((a,b)=>{
+      const ta=a.scheduledStart?new Date(a.scheduledStart).getTime():Infinity;
+      const tb=b.scheduledStart?new Date(b.scheduledStart).getTime():Infinity;
+      return ta-tb;
+    })
     .slice(0,3)
-    .map(x=>({title:x.title, when:`${fmtDate(x.scheduledStart)} ${fmtTime(x.scheduledStart)}`, url:x.url, tag:'UPCOMING'}));
+    .map(x=>({title:x.title, when:x.scheduledStart?`${fmtDate(x.scheduledStart)} ${fmtTime(x.scheduledStart)}`:"Heure N/A", url:x.url, tag:'UPCOMING'}));
 
   if(next3.length===0){
     next3=state.data.upcoming
@@ -71,7 +73,6 @@ function renderLive(){
   });
 }
 
-/* ---------- ISSUES ---------- */
 function renderIssues(){
   const box=document.getElementById('issues');box.innerHTML='';
   if(!state.data.issues.length){const e=document.createElement('div');e.className='muted';e.textContent='Aucun problème signalé.';box.appendChild(e);return}
@@ -82,15 +83,10 @@ function renderIssues(){
   });
 }
 
-/* ---------- À VENIR (90 min) — YouTube -> fallback sheet ---------- */
 function renderNext90(){
   const box=document.getElementById('next90');box.innerHTML='';
-
-  let soon=(state.data.ytUpcoming||[])
-    .filter(x=>withinNextMinutes(x.scheduledStart,90))
-    .sort((a,b)=>new Date(a.scheduledStart)-new Date(b.scheduledStart))
-    .map(x=>({ title:x.title, time:fmtTime(x.scheduledStart), url:x.url }));
-
+  const soonYT=(state.data.ytUpcoming||[]).filter(x=>x.scheduledStart&&withinNextMinutes(x.scheduledStart,90));
+  let soon = soonYT.sort((a,b)=>new Date(a.scheduledStart)-new Date(b.scheduledStart)).map(x=>({ title:x.title, time:fmtTime(x.scheduledStart), url:x.url }));
   if(!soon.length){
     const sheetSoon=state.data.upcoming
       .map(x=>({...x,prod:normProd(x.production)}))
@@ -99,7 +95,6 @@ function renderNext90(){
       .map(x=>({ title:`${x.teamA} vs ${x.teamB}`, time:fmtTime(x.datetime), url:'' }));
     soon = sheetSoon;
   }
-
   if(!soon.length){const e=document.createElement('div');e.className='muted';e.textContent='Time to rest 😴';box.appendChild(e);return}
   soon.forEach(x=>{
     const el=document.createElement('div');el.className='item';
@@ -112,7 +107,6 @@ function renderNext90(){
   });
 }
 
-/* ---------- HEALTH (YT ingest) ---------- */
 function renderHealth(){
   const box=document.getElementById('ytHealth');box.innerHTML='';
   if(!state.data.live.length){return}
@@ -133,7 +127,6 @@ function renderHealth(){
   });
 }
 
-/* ---------- CALENDRIER (sheet) ---------- */
 function inActiveTabRange(d){
   const t=new Date(d).getTime();
   const now=new Date();
@@ -175,7 +168,6 @@ function renderUpcoming(){
   });
 }
 
-/* ---------- LOAD / EVENTS ---------- */
 function renderAll(){renderLive();renderIssues();renderNext90();renderHealth();renderUpcoming()}
 function setLastUpdate(){const el=document.getElementById('lastUpdate');const d=new Date();el.textContent=d.toLocaleTimeString('fr-CH',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}
 async function fetchJSON(url){const r=await fetch(url,{cache:'no-store'});if(!r.ok)throw new Error('http');return await r.json()}
@@ -187,7 +179,11 @@ async function loadCalendars(){
 }
 
 async function loadYouTube(){
-  const payload=await fetchJSON('/api/live');
+  let payload = await fetchJSON('/api/live');
+  if ((!payload.live || payload.live.length===0) && (!payload.upcoming || payload.upcoming.length===0)) {
+    const atom = await fetchJSON('/api/live-feed');
+    payload = { live: atom.live||[], upcoming: atom.upcoming||[], meta: { source: atom.source||'atom', lastError:'' } };
+  }
   state.data.live = payload.live || [];
   state.data.ytUpcoming = payload.upcoming || [];
   state.data.ytMeta = payload.meta || { source:'', quotaBackoffUntil:0, lastError:'' };
@@ -200,8 +196,6 @@ document.getElementById('searchInput').addEventListener('input',e=>{state.search
 document.getElementById('tabRange1').addEventListener('click',()=>{state.activeUpcomingTab='RANGE1';document.getElementById('tabRange1').classList.add('active');document.getElementById('tabRange2').classList.remove('active');renderUpcoming()});
 document.getElementById('tabRange2').addEventListener('click',()=>{state.activeUpcomingTab='RANGE2';document.getElementById('tabRange2').classList.add('active');document.getElementById('tabRange1').classList.remove('active');renderUpcoming()});
 
-// initial load
 loadCalendars(); loadYouTube();
-// intervals séparés
-setInterval(loadCalendars, 10000); // Sheet = fluide
-setInterval(loadYouTube, 60000);   // YouTube = lent (quota)
+setInterval(loadCalendars, 10000);
+setInterval(loadYouTube, 60000);
