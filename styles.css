@@ -1,38 +1,190 @@
-:root{--bg:#0b0b10;--panel:#12131a;--muted:#8a8fa3;--text:#e8eaf3;--accent:#4f7cff;--ok:#2ea043;--warn:#f29900;--error:#e5534b}
-*{box-sizing:border-box}
-html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif}
-h1{margin:0 0 .6rem 0;font-size:1.25rem}
-.wrapper{max-width:1200px;margin:0 auto;padding:16px}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-.panel{background:var(--panel);border:1px solid #1a1c25;border-radius:12px;padding:12px}
-.header{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
-.header .right{margin-left:auto;display:flex;gap:8px;align-items:center}
-button{background:transparent;border:1px solid #2a2d3a;color:var(--text);padding:6px 10px;border-radius:8px;cursor:pointer}
-button:hover{border-color:#3a3f52}
-.muted{color:var(--muted)}
-.list{display:flex;flex-direction:column;gap:8px}
-.item{display:grid;grid-template-columns:1.2fr .8fr auto auto;gap:8px;align-items:center;background:rgba(255,255,255,.02);border:1px solid #1a1c25;border-radius:10px;padding:8px}
-.tag{display:inline-flex;align-items:center;gap:6px;border:1px solid #2a2d3a;border-radius:999px;padding:2px 8px;font-size:.85rem}
-.badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:2px 8px;font-size:.85rem;border:1px solid transparent}
-.badge.status-perfect{background:rgba(46,160,67,.15);border-color:rgba(46,160,67,.35)}
-.badge.status-good{background:rgba(46,160,67,.15);border-color:rgba(46,160,67,.35)}
-.badge.status-bad{background:rgba(229,83,75,.15);border-color:rgba(229,83,75,.35)}
-.badge.status-nodata{background:rgba(154,160,180,.15);border-color:rgba(154,160,180,.35)}
-.badge.status-ok{background:rgba(46,160,67,.15);border-color:rgba(46,160,67,.35)}
-.badge.status-warn{background:rgba(242,153,0,.18);border-color:rgba(242,153,0,.45)}
-.badge.status-error{background:rgba(229,83,75,.18);border-color:rgba(229,83,75,.45)}
-.toolbar{display:flex;gap:8px;align-items:center;margin-bottom:8px}
-.toolbar input{background:#0f1016;border:1px solid #1a1c25;border-radius:8px;padding:6px 10px;color:var(--text);min-width:220px}
-.tabs{display:flex;gap:8px;margin:8px 0}
-.tab{padding:6px 10px;border:1px solid #2a2d3a;border-radius:8px;cursor:pointer}
-.tab.active{background:#1b1f2e;border-color:#3a3f52}
-.table-wrap{overflow:auto;border:1px solid #1a1c25;border-radius:10px}
-table{width:100%;border-collapse:collapse;font-size:.95rem}
-th,td{padding:8px;border-bottom:1px solid #1a1c25;white-space:nowrap}
-th{text-align:left;color:#c9cde0;background:#121525;position:sticky;top:0;z-index:1}
-.footer{margin-top:8px;font-size:.85rem;color:var(--muted);display:flex;justify-content:flex-end}
-@media(max-width:980px){.grid{grid-template-columns:1fr}.item{grid-template-columns:1fr .7fr auto auto}}
-/* --- badges statut Keemotion (ne change pas la mise en page) --- */
-.tag-ok   { background: rgba(46,160,67,.15);  border-color: rgba(46,160,67,.35); }
-.tag-warn { background: rgba(242,153,0,.18);  border-color: rgba(242,153,0,.45); }
-.tag-error{ background: rgba(229,83,75,.18);  border-color: rgba(229,83,75,.45); }
+:root {
+  --bg: #0b0b10;
+  --panel: #12131a;
+  --text: #e8eaf3;
+  --muted: #8a8fa3;
+  --border: #1d1f29;
+  --accent: #4f7cff;
+  --ok: #2ea043;
+  --warn: #f29900;
+  --error: #e5534b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.wrapper {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+h1 {
+  margin: 0 0 10px;
+  font-size: 1.4rem;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.header h1 {
+  font-size: 1.3rem;
+  font-weight: 600;
+}
+
+button {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.item {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.02);
+}
+
+.item .tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.8rem;
+  opacity: 0.85;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 6px;
+  font-size: 0.9rem;
+}
+
+th, td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+th {
+  color: var(--muted);
+  background: rgba(255,255,255,0.02);
+  position: sticky;
+  top: 0;
+}
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+
+.tab {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: rgba(255,255,255,0.02);
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--text);
+  transition: all .2s ease;
+}
+.tab.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.toolbar select,
+.toolbar input {
+  background: #0f1016;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 6px 10px;
+  font-size: 0.9rem;
+}
+
+.footer {
+  text-align: right;
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-top: 10px;
+}
+
+/* -------- badges Keemotion -------- */
+.tag-ok {
+  background: rgba(46,160,67,0.15);
+  border-color: rgba(46,160,67,0.4);
+}
+.tag-warn {
+  background: rgba(242,153,0,0.18);
+  border-color: rgba(242,153,0,0.45);
+}
+.tag-error {
+  background: rgba(229,83,75,0.18);
+  border-color: rgba(229,83,75,0.45);
+}
+
+@media (max-width: 900px) {
+  .item {
+    grid-template-columns: 1fr auto;
+    row-gap: 4px;
+  }
+}
