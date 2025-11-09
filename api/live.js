@@ -6,7 +6,7 @@ const YT_CHANNELS = "https://www.googleapis.com/youtube/v3/channels";
 
 let CACHE = {
   ts: 0,
-  data: { live: [], upcoming: [] },
+  data: { live: [], upcoming: [], meta: { source: "init", quotaBackoffUntil: 0, lastError: "" } },
   backoffUntil: 0
 };
 const CACHE_TTL_MS = 120000; // 2 min
@@ -58,6 +58,7 @@ async function broadcasts(accessToken, status) {
     if (isQuota) {
       const now = Date.now();
       CACHE.backoffUntil = Math.max(CACHE.backoffUntil, now + BACKOFF_MS);
+      throw new Error("quotaExceeded");
     }
     throw new Error("broadcasts_" + status);
   }
@@ -112,20 +113,18 @@ async function videosDetails(accessToken, ids) {
 }
 
 export default async function handler(req, res) {
-  // cache CDN côté Vercel (ISR-like)
   res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=300");
 
   const now = Date.now();
   const cacheFresh = (now - CACHE.ts) < CACHE_TTL_MS;
-
   if (cacheFresh) {
     return res.status(200).json(CACHE.data);
   }
-
-  // backoff si quota dépassé récemment
   if (now < CACHE.backoffUntil) {
     return res.status(200).json(CACHE.data);
   }
+
+  let meta = { source: "liveBroadcasts", quotaBackoffUntil: CACHE.backoffUntil, lastError: "" };
 
   try {
     const access = await getAccessToken();
@@ -148,8 +147,9 @@ export default async function handler(req, res) {
       url: `https://www.youtube.com/watch?v=${b?.id}`
     })).filter(x => !!x.scheduledStart);
 
-    // 2) fallback (public/unlisted) si rien
+    // 2) fallback (public/unlisted) si liveBroadcasts ne renvoie rien
     if (live.length === 0 || upcoming.length === 0) {
+      meta.source = "searchFallback";
       const chId = await channelIdForMine(access);
 
       if (live.length === 0) {
@@ -179,11 +179,12 @@ export default async function handler(req, res) {
       }
     }
 
-    CACHE.data = { live, upcoming };
+    CACHE.data = { live, upcoming, meta };
     CACHE.ts = now;
     return res.status(200).json(CACHE.data);
   } catch (e) {
-    // en cas d’erreur, on sert le cache si dispo
+    meta.lastError = String(e || "");
+    CACHE.data.meta = meta;
     return res.status(200).json(CACHE.data);
   }
 }
