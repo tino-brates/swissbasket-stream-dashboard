@@ -1,13 +1,11 @@
-// Keemotion / Pointguard arena issues proxy
-// Lit la liste des arènes et ne renvoie QUE les statuts critiques (offline, bandwidth insuffisant, unstable…).
-
 const BASE = process.env.KEEMOTION_API_BASE || "https://pointguard.keemotion.com";
 const PATH = process.env.KEEMOTION_ARENAS_PATH || "/game/arenas?inactive=false&can_schedule=true&sort=name,asc&page=0,25";
 const TOKEN = process.env.KEEMOTION_TOKEN || "";
 const SCHEME = process.env.KEEMOTION_AUTH_SCHEME || "OAuth2";
 const UA = process.env.KEEMOTION_AGENT || "KeecastWeb 5.24.2";
-const REF = process.env.KEEMOTION_REFERER || "";   // optionnel
-const ORI = process.env.KEEMOTION_ORIGIN || "";    // optionnel
+const REF = process.env.KEEMOTION_REFERER || "https://sportshub.keemotion.com/";
+const ORI = process.env.KEEMOTION_ORIGIN || "https://sportshub.keemotion.com";
+const ALANG = process.env.KEEMOTION_ACCEPT_LANGUAGE || "fr-CH,fr;q=0.9";
 
 function isCriticalText(s) {
   const t = (s || "").toLowerCase();
@@ -22,41 +20,22 @@ function isCriticalText(s) {
 }
 
 function extractArenaItem(a) {
-  // Nom probable de l’arène selon divers schémas possibles
   const arena =
-    a?.name ||
-    a?.arena_name ||
-    a?.venue?.name ||
-    a?.location?.name ||
-    a?.title ||
-    "";
+    a?.name || a?.arena_name || a?.venue?.name || a?.location?.name || a?.title || "";
 
-  // Statut textuel : on tente plusieurs clés
   const statusCandidates = [
-    a?.status,
-    a?.online_status,
-    a?.encoder?.status,
-    a?.network_status,
-    a?.bandwidth_status,
+    a?.status, a?.online_status, a?.encoder?.status,
+    a?.network_status, a?.bandwidth_status
   ].filter(Boolean);
 
-  // Si rien, tentative d’extraction depuis le JSON brut
   const blob = JSON.stringify(a);
   const status =
     statusCandidates.find(s => typeof s === "string") ||
-    (blob.match(/"status":"([^"]+)"/)?.[1] || "") ||
-    "";
+    (blob.match(/"status":"([^"]+)"/)?.[1] || "") || "";
 
-  const note =
-    a?.note ||
-    a?.network_message ||
-    a?.encoder?.message ||
-    "";
+  const note = a?.note || a?.network_message || a?.encoder?.message || "";
 
-  const critical =
-    isCriticalText(status) ||
-    isCriticalText(note) ||
-    isCriticalText(blob);
+  const critical = isCriticalText(status) || isCriticalText(note) || isCriticalText(blob);
 
   return {
     arena,
@@ -81,21 +60,22 @@ export default async function handler(req, res) {
     const headers = {
       Authorization: `${SCHEME} ${TOKEN}`,
       Accept: "application/json",
+      "Accept-Language": ALANG,
       "User-Agent": UA,
+      Referer: REF,
+      Origin: ORI,
+      // certains endpoints aiment bien cet header maison :
+      "Keemotion-Agent": UA,
     };
-    if (REF) headers["Referer"] = REF;
-    if (ORI) headers["Origin"] = ORI;
 
-    const r = await fetch(url, { headers });
+    const r = await fetch(url, { method: "GET", headers, cache: "no-store" });
 
     if (!r.ok) {
       return res.status(200).json({ items: [], error: `Keemotion fetch failed (${r.status})` });
     }
 
     const data = await r.json();
-    // Format souvent { results: [...] } ou tableau direct :
     const list = Array.isArray(data) ? data : Array.isArray(data?.results) ? data.results : [];
-
     const mapped = list.map(extractArenaItem).filter(x => x.arena);
     const criticalOnly = mapped.filter(x => x.severity === "critical");
 
