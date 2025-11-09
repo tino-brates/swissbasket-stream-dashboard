@@ -1,11 +1,13 @@
-// Récupère les lives YT en cours (mine=true) via OAuth (refresh token)
-// Étapes : refresh token -> search.list (eventType=live, forMine) -> videos.list pour l'heure de début
+// Récupère depuis YouTube :
+// - les lives EN COURS (eventType=live, forMine=true)
+// - les lives A VENIR (eventType=upcoming, forMine=true)
+// Retourne { live: [...], upcoming: [...] } avec title, startedAt/scheduledStart et url.
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const YT_SEARCH = "https://www.googleapis.com/youtube/v3/search";
 const YT_VIDEOS = "https://www.googleapis.com/youtube/v3/videos";
 
-// On privilégie les identifiants "PLAYGROUND" si présents, sinon on tombe sur "DESKTOP".
+// On privilégie les identifiants PLAYGROUND si présents; sinon DESKTOP.
 function pickCreds() {
   const P = {
     client_id: process.env.YT_PLAYGROUND_CLIENT_ID,
@@ -43,10 +45,10 @@ async function getAccessToken() {
   return j.access_token;
 }
 
-async function ytSearchLive(accessToken) {
+async function ytSearchByEventType(accessToken, eventType) {
   const url = new URL(YT_SEARCH);
   url.searchParams.set("part", "snippet");
-  url.searchParams.set("eventType", "live");
+  url.searchParams.set("eventType", eventType); // "live" | "upcoming"
   url.searchParams.set("type", "video");
   url.searchParams.set("forMine", "true");
   url.searchParams.set("maxResults", "50");
@@ -54,7 +56,7 @@ async function ytSearchLive(accessToken) {
   const r = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  if (!r.ok) throw new Error("search");
+  if (!r.ok) throw new Error("search_" + eventType);
   const j = await r.json();
   return (j.items || [])
     .map((it) => ({
@@ -65,6 +67,7 @@ async function ytSearchLive(accessToken) {
 }
 
 async function ytVideosDetails(accessToken, ids) {
+  if (!ids.length) return new Map();
   const url = new URL(YT_VIDEOS);
   url.searchParams.set("part", "liveStreamingDetails,snippet");
   url.searchParams.set("id", ids.join(","));
@@ -78,8 +81,8 @@ async function ytVideosDetails(accessToken, ids) {
   const map = new Map();
   (j.items || []).forEach((v) => {
     map.set(v.id, {
-      startedAt:
-        v?.liveStreamingDetails?.actualStartTime ||
+      actualStart: v?.liveStreamingDetails?.actualStartTime || null,
+      scheduledStart:
         v?.liveStreamingDetails?.scheduledStartTime ||
         v?.snippet?.publishedAt ||
         null,
@@ -92,30 +95,41 @@ export default async function handler(req, res) {
   try {
     const accessToken = await getAccessToken();
 
-    // 1) vidéos live en cours sur la chaîne (mine=true)
-    const lives = await ytSearchLive(accessToken);
-    if (!lives.length) {
-      return res.status(200).json({ items: [] });
-    }
-
-    // 2) compléter avec l'heure de début (videos.list)
-    const details = await ytVideosDetails(
+    // 1) EN DIRECT
+    const liveList = await ytSearchByEventType(accessToken, "live");
+    const liveDetails = await ytVideosDetails(
       accessToken,
-      lives.map((x) => x.videoId)
+      liveList.map((x) => x.videoId)
     );
-
-    const items = lives.map((x) => {
-      const d = details.get(x.videoId) || {};
+    const live = liveList.map((x) => {
+      const d = liveDetails.get(x.videoId) || {};
       return {
         title: x.title,
-        startedAt: d.startedAt || null,
+        startedAt: d.actualStart || d.scheduledStart || null,
         url: `https://www.youtube.com/watch?v=${x.videoId}`,
       };
     });
 
-    res.status(200).json({ items });
+    // 2) A VENIR
+    const upList = await ytSearchByEventType(accessToken, "upcoming");
+    const upDetails = await ytVideosDetails(
+      accessToken,
+      upList.map((x) => x.videoId)
+    );
+    const upcoming = upList
+      .map((x) => {
+        const d = upDetails.get(x.videoId) || {};
+        return {
+          title: x.title,
+          scheduledStart: d.scheduledStart || null,
+          url: `https://www.youtube.com/watch?v=${x.videoId}`,
+        };
+      })
+      .filter((x) => !!x.scheduledStart);
+
+    res.status(200).json({ live, upcoming });
   } catch (e) {
-    // En cas d'erreur (quota/token), on renvoie liste vide pour ne pas casser l'UI
-    res.status(200).json({ items: [] });
+    // En cas d'erreur (quota/token), on renvoie des listes vides
+    res.status(200).json({ live: [], upcoming: [] });
   }
 }
