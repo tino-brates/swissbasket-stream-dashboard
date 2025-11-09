@@ -1,10 +1,10 @@
 const SHEET_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSJbAy9lLRUi22IZZTwuL0hpbMdekSoyFbL05_GaO2p9gbHJFQYVomMlKIM8zRKX0e42B9awnelGz5H/pub?gid=1442510586&single=true&output=csv";
 
-function splitCSVLine(line) {
+function splitCSVLine(line){
   const out=[]; let cur=""; let inQ=false;
-  for (let i=0;i<line.length;i++){
+  for(let i=0;i<line.length;i++){
     const c=line[i];
-    if(c==='"'){ if(inQ && line[i+1]==='"'){cur+='"'; i++;} else inQ=!inQ;}
+    if(c==='"'){ if(inQ && line[i+1]==='"'){cur+='"'; i++;} else inQ=!inQ; }
     else if(c===',' && !inQ){ out.push(cur); cur=""; }
     else cur+=c;
   }
@@ -21,12 +21,13 @@ function parseCSV(text){
   });
 }
 function toDateTimeCH(dateStr,timeStr){
-  const ds=(dateStr||'').trim(); const ts=(timeStr||'').trim();
-  let m=ds.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
+  const ds=(dateStr||"").trim();
+  const ts=(timeStr||"").trim();
+  const m=ds.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
   if(m){
-    const dd=+m[1], mm=+m[2], yyyy=+m[3];
+    const dd=parseInt(m[1],10), mm=parseInt(m[2],10), yyyy=parseInt(m[3],10);
     const tt=ts.match(/^(\d{1,2}):(\d{2})$/);
-    const hh=tt?+tt[1]:0; const mn=tt?+tt[2]:0;
+    const hh=tt?parseInt(tt[1],10):0, mn=tt?parseInt(tt[2],10):0;
     return new Date(Date.UTC(yyyy,mm-1,dd,hh,mn,0));
   }
   const t=Date.parse(ds+(ts?` ${ts}`:""));
@@ -34,22 +35,22 @@ function toDateTimeCH(dateStr,timeStr){
 }
 function normProd(s){
   const v=(s||"").toUpperCase();
-  if(v.includes("KEEMOTION")) return "Keemotion";
-  if(v.includes("SWISH")) return "Swish Live";
-  if(v.includes("MANUAL")) return "Manual";
-  if(v.trim()==="TV") return "TV";
-  return "";
+  if(v.includes("KEEMOTION"))return"Keemotion";
+  if(v.includes("SWISH"))return"Swish Live";
+  if(v.includes("MANUAL"))return"Manual";
+  if(v.trim()==="TV")return"TV";
+  return"";
 }
 
 export default async function handler(req,res){
   try{
     const r=await fetch(SHEET_CSV);
-    if(!r.ok) throw new Error('sheet');
+    if(!r.ok)throw new Error("sheet");
     const text=await r.text();
     const rows=parseCSV(text);
 
     const now=Date.now();
-    const horizon=now + 30*24*60*60*1000;
+    const horizon=now+30*24*60*60*1000;
 
     const items=rows.map(row=>{
       const dateCol=row.Date||row.DATE||row.date||row["Date du match"]||"";
@@ -61,14 +62,19 @@ export default async function handler(req,res){
       const yt=row["YouTube ID"]||row["YT ID"]||row["YouTube"]||row["youtubeEventId"]||"";
       const competition=row.Competition||row.League||row["Compétition"]||"";
       const dt=toDateTimeCH(dateCol,timeCol);
-      return { datetime: dt?dt.toISOString():null, teamA, teamB, arena, production, youtubeEventId: yt, competition };
+      return {
+        datetime: dt?dt.toISOString():null,
+        teamA, teamB, arena,
+        production, youtubeEventId: yt,
+        competition
+      };
     })
     .filter(x=>x.datetime)
-    .filter(x=>{ const t=new Date(x.datetime).getTime(); return t>=now && t<=horizon; })
+    .filter(x=>{const t=new Date(x.datetime).getTime();return t>=now && t<=horizon;})
     .filter(x=>!!normProd(x.production));
 
-    res.status(200).json({ items });
-  }catch{
-    res.status(200).json({ items: [] });
+    res.status(200).json({items});
+  }catch(e){
+    res.status(200).json({items:[]});
   }
 }

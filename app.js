@@ -2,7 +2,7 @@ const state = {
   filterProd: 'ALL',
   search: '',
   activeUpcomingTab: 'RANGE1',
-  data: { live: [], issues: [], upcoming: [], ytUpcoming: [], health: [] }
+  data: { live: [], issues: [], upcoming: [], health: [] }
 };
 
 function fmtDate(d){const x=new Date(d);return x.toLocaleDateString('fr-CH',{weekday:'short',year:'numeric',month:'2-digit',day:'2-digit'})}
@@ -22,33 +22,6 @@ function badgeForStatus(s){const map={perfect:'status-perfect',good:'status-good
 
 function renderLive(){
   const box=document.getElementById('liveNow');box.innerHTML='';
-  if(state.data.live.length){
-    state.data.live.forEach(x=>{
-      const el=document.createElement('div');el.className='item';
-      el.innerHTML=`<div>${x.title}</div><div></div><div>${fmtTime(x.startedAt||Date.now())}</div><a class="tag" href="${x.url}" target="_blank">Ouvrir</a>`;
-      box.appendChild(el);
-    });
-    return;
-  }
-  const next3=state.data.ytUpcoming
-    .filter(x=>isInFuture(x.scheduledStart))
-    .sort((a,b)=>new Date(a.scheduledStart)-new Date(b.scheduledStart))
-    .slice(0,3);
-  if(next3.length===0){return}
-  next3.forEach(x=>{
-    const el=document.createElement('div');
-    el.className='item';
-    el.setAttribute('style','position:relative;opacity:.45;');
-    el.innerHTML=`
-      <div>${x.title}</div>
-      <div></div>
-      <div class="date-mini">${fmtDate(x.scheduledStart)} ${fmtTime(x.scheduledStart)}</div>
-      <a class="tag" href="${x.url}" target="_blank">Ouvrir</a>
-      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">
-        <span style="font-weight:700;letter-spacing:.1em;border:1px solid currentColor;border-radius:9999px;padding:.2rem .6rem;opacity:.9;">UPCOMING</span>
-      </div>`;
-    box.appendChild(el);
-  });
 }
 
 function renderIssues(){
@@ -63,37 +36,11 @@ function renderIssues(){
 
 function renderNext90(){
   const box=document.getElementById('next90');box.innerHTML='';
-  const soon=state.data.ytUpcoming.filter(x=>withinNextMinutes(x.scheduledStart,90));
-  if(!soon.length){const e=document.createElement('div');e.className='muted';e.textContent='Time to rest 😴';box.appendChild(e);return}
-  soon.sort((a,b)=>new Date(a.scheduledStart)-new Date(b.scheduledStart)).forEach(x=>{
-    const el=document.createElement('div');el.className='item';
-    el.innerHTML=`
-      <div class="date-mini">${fmtDate(x.scheduledStart)} ${fmtTime(x.scheduledStart)}</div>
-      <div>${x.title}</div>
-      <div></div>
-      <div class="tag alt"><a href="${x.url}" target="_blank" style="color:inherit;text-decoration:none;">Ouvrir</a></div>`;
-    box.appendChild(el);
-  });
+  const e=document.createElement('div');e.className='muted';e.textContent='Time to rest 😴';box.appendChild(e);
 }
 
 function renderHealth(){
   const box=document.getElementById('ytHealth');box.innerHTML='';
-  if(!state.data.live.length){return}
-  if(!state.data.health.length){return}
-  state.data.health.forEach(x=>{
-    const since=x.lastUpdate?timeSince(x.lastUpdate):'';
-    const el=document.createElement('div');
-    el.className='item';
-    el.innerHTML=`
-      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;width:100%;">
-        <div style="flex:1;min-width:140px;">${x.name}</div>
-        <div class="badge ${badgeForStatus(x.status)}">${x.statusLabel}</div>
-        <div class="muted" style="flex:1;min-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.streamKey||''}</div>
-        <div class="muted" style="white-space:nowrap;">${x.lastUpdate?fmtTime(x.lastUpdate):''}</div>
-        <div class="muted" style="font-size:.8em;opacity:.7;">🕒 il y a ${since}</div>
-      </div>`;
-    box.appendChild(el);
-  });
 }
 
 function inActiveTabRange(d){
@@ -141,18 +88,8 @@ function renderAll(){renderLive();renderIssues();renderNext90();renderHealth();r
 function setLastUpdate(){const el=document.getElementById('lastUpdate');const d=new Date();el.textContent=d.toLocaleTimeString('fr-CH',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}
 async function fetchJSON(url){const r=await fetch(url);if(!r.ok)throw new Error('http');return await r.json()}
 async function loadData(){
-  const [live,issues,upcoming,ytup,health]=await Promise.all([
-    fetchJSON('/api/live'),
-    fetchJSON('/api/issues'),
-    fetchJSON('/api/upcoming'),
-    fetchJSON('/api/yt-upcoming'),
-    fetchJSON('/api/health')
-  ]);
-  state.data.live=live.items||[];
-  state.data.issues=issues.items||[];
+  const [upcoming]=await Promise.all([fetchJSON('/api/upcoming')]);
   state.data.upcoming=upcoming.items||[];
-  state.data.ytUpcoming=ytup.items||[];
-  state.data.health=health.items||[];
   renderAll();setLastUpdate();
 }
 
