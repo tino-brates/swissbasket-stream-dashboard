@@ -1,9 +1,6 @@
 export default async function handler(req, res) {
   const {
     KEEMOTION_API_BASE = 'https://pointguard.keemotion.com',
-    KEEMOTION_ARENAS_BASEPATH = '/game/arenas',
-    KEEMOTION_LIMIT = '100',
-    KEEMOTION_OFFSET = '0',
     KEEMOTION_AUTH_SCHEME = 'OAuth2',
     KEEMOTION_TOKEN = '',
     KEEMOTION_REFERER = 'https://sportshub.keemotion.com/',
@@ -13,7 +10,7 @@ export default async function handler(req, res) {
 
   const debug = req.query.debug === '1';
 
-  const headers = {
+  const H = {
     'Authorization': `${KEEMOTION_AUTH_SCHEME} ${KEEMOTION_TOKEN}`,
     'Keemotion-Agent': 'KeecastWeb 5.24.2',
     'Origin': KEEMOTION_ORIGIN,
@@ -23,49 +20,136 @@ export default async function handler(req, res) {
     'User-Agent': 'Mozilla/5.0',
   };
 
-  const url = `${KEEMOTION_API_BASE}${KEEMOTION_ARENAS_BASEPATH}?inactive=false&can_schedule=true&sort=name,asc&page=${KEEMOTION_OFFSET},${KEEMOTION_LIMIT}`;
-
-  let arenasJson = null;
-  try {
-    const r = await fetch(url, { headers });
-    if (!r.ok) {
-      const raw = await r.text();
-      return res.status(200).json({
-        items: [],
-        error: `Keemotion fetch failed (${r.status})`,
-        debug: debug ? { step: 'arenas', status: r.status, raw } : undefined,
-      });
+  async function fetchAny(path) {
+    const url = `${KEEMOTION_API_BASE}${path}`;
+    let bodyText = null;
+    let json = null;
+    let status = 0;
+    try {
+      const r = await fetch(url, { headers: H });
+      status = r.status;
+      bodyText = await r.text();
+      try { json = JSON.parse(bodyText); } catch (_) {}
+      return { ok: r.ok, status, url, json, bodyText };
+    } catch (e) {
+      return { ok: false, status: -1, url, json: null, bodyText: String(e) };
     }
-    arenasJson = await r.json();
-  } catch (e) {
-    return res.status(200).json({
-      items: [],
-      error: `Keemotion fetch failed (network)`,
-      debug: debug ? { step: 'arenas', err: String(e) } : undefined,
-    });
   }
 
-  const list = Array.isArray(arenasJson?.items) ? arenasJson.items : [];
+  // 1) Arenas (liste des salles)
+  const arenasResp = await fetchAny('/game/arenas?inactive=false&can_schedule=true&sort=name,asc&page=0,100');
 
-  // Filtre “problèmes” minimal pour l’instant: on ne sait pas encore où Keemotion place les flags.
-  // On renvoie vide par défaut jusqu’à ce qu’on voie les champs exacts en debug.
+  // 2) Infos bande passante par arène
+  const bwInfoResp = await fetchAny('/bandwidth-info');
+
+  // 3) Métriques bande passante des N derniers jours (3 par défaut)
+  const bwMetricsResp = await fetchAny('/bandwidth-metrics?from=3');
+
+  // Utilitaires
+  const toArray = (data) => {
+    if (!data) return [];
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data?.items)) return data.items;
+    if (Array.isArray(data?.data)) return data.data;
+    return [];
+  };
+
+  const arenas = toArray(arenasResp.json);
+  const bwInfo = toArray(bwInfoResp.json);
+  const bwMetrics = toArray(bwMetricsResp.json);
+
+  // Heuristique de détection des problèmes (à ajuster en fonction du debug réel)
+  const BAD_WORDS = /(unstable|no\s?ingest|no\s?data|offline|freeze|bad)/i;
+
+  function flatText(obj, depth = 2) {
+    if (!obj || depth < 0) return '';
+    if (typeof obj === 'string') return obj;
+    if (typeof obj === 'number' || typeof obj === 'boolean') return String(obj);
+    if (Array.isArray(obj)) return obj.map(v => flatText(v, depth - 1)).join(' ');
+    return Object.values(obj).map(v => flatText(v, depth - 1)).join(' ');
+  }
+
+  function pickName(obj) {
+    return obj?.name || obj?.arenaName || obj?.arena || obj?.title || obj?.id || 'Arena';
+  }
+
+  // On tente de fabriquer une liste "problèmes" en combinant les sources
   const problems = [];
 
+  // a) depuis arenas
+  arenas.forEach(a => {
+    const text = flatText(a);
+    if (BAD_WORDS.test(text)) {
+      problems.push({
+        arena: pickName(a),
+        vendor: 'Keemotion',
+        status: 'issue',
+        note: text.slice(0, 160),
+        source: 'arenas'
+      });
+    }
+  });
+
+  // b) depuis bandwidth-info
+  bwInfo.forEach(b => {
+    const text = flatText(b);
+    if (BAD_WORDS.test(text)) {
+      problems.push({
+        arena: pickName(b),
+        vendor: 'Keemotion',
+        status: 'issue',
+        note: text.slice(0, 160),
+        source: 'bandwidth-info'
+      });
+    }
+  });
+
+  // c) depuis bandwidth-metrics (si métriques indiquent "no data" / "offline" / "unstable")
+  bwMetrics.forEach(m => {
+    const text = flatText(m);
+    if (BAD_WORDS.test(text)) {
+      problems.push({
+        arena: pickName(m),
+        vendor: 'Keemotion',
+        status: 'issue',
+        note: text.slice(0, 160),
+        source: 'bandwidth-metrics'
+      });
+    }
+  });
+
   if (debug) {
-    // On retourne un échantillon pour qu’on voie la forme réelle des données.
     return res.status(200).json({
       items: problems,
       debug: {
-        count: list.length,
-        sample: list.slice(0, 5),
-        usedUrl: url,
-        sentHeaders: {
+        arenas: {
+          status: arenasResp.status,
+          url: arenasResp.url,
+          type: Array.isArray(arenasResp.json) ? 'array' : typeof arenasResp.json,
+          count: arenas.length,
+          sample: arenas.slice(0, 3),
+        },
+        bandwidthInfo: {
+          status: bwInfoResp.status,
+          url: bwInfoResp.url,
+          type: Array.isArray(bwInfoResp.json) ? 'array' : typeof bwInfoResp.json,
+          count: bwInfo.length,
+          sample: bwInfo.slice(0, 3),
+        },
+        bandwidthMetrics: {
+          status: bwMetricsResp.status,
+          url: bwMetricsResp.url,
+          type: Array.isArray(bwMetricsResp.json) ? 'array' : typeof bwMetricsResp.json,
+          count: bwMetrics.length,
+          sample: bwMetrics.slice(0, 3),
+        },
+        headersSent: {
           Authorization: `${KEEMOTION_AUTH_SCHEME} <redacted>`,
           'Keemotion-Agent': 'KeecastWeb 5.24.2',
           Origin: KEEMOTION_ORIGIN,
           Referer: KEEMOTION_REFERER,
-        },
-      },
+        }
+      }
     });
   }
 
