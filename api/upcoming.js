@@ -1,81 +1,150 @@
-const SHEET_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSJbAy9lLRUi22IZZTwuL0hpbMdekSoyFbL05_GaO2p9gbHJFQYVomMlKIM8zRKX0e42B9awnelGz5H/pub?gid=1442510586&single=true&output=csv"
+const SHEET_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSJbAy9lLRUi22IZZTwuL0hpbMdekSoyFbL05_GaO2p9gbHJFQYVomMlKIM8zRKX0e42B9awnelGz5H/pub?gid=1442510586&single=true&output=csv";
+const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 
-function parseCSV(text) {
-  const rows = []
-  let cur = []
-  let buf = ""
-  let inQ = false
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i]
-    const n = text[i + 1]
-    if (c === '"' && inQ && n === '"') { buf += '"'; i++; continue }
-    if (c === '"') { inQ = !inQ; continue }
-    if (c === ',' && !inQ) { cur.push(buf); buf = ""; continue }
-    if ((c === '\n' || c === '\r') && !inQ) {
-      if (buf !== "" || cur.length > 0) { cur.push(buf); rows.push(cur); cur = []; buf = "" }
-      continue
-    }
-    buf += c
+async function getAccessToken() {
+  const clientId = process.env.YT_PLAYGROUND_CLIENT_ID || process.env.YT_CLIENT_ID;
+  const clientSecret = process.env.YT_PLAYGROUND_CLIENT_SECRET || process.env.YT_CLIENT_SECRET;
+  const refreshToken = process.env.YT_PLAYGROUND_REFRESH_TOKEN || process.env.YT_REFRESH_TOKEN;
+
+  const params = new URLSearchParams({
+    client_id: clientId,
+    client_secret: clientSecret,
+    refresh_token: refreshToken,
+    grant_type: 'refresh_token'
+  });
+
+  const r = await fetch(TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params
+  });
+  if (!r.ok) throw new Error('token');
+  const j = await r.json();
+  return j.access_token;
+}
+
+function splitCSVLine(line) {
+  const out = []; let cur = ''; let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') { if (inQ && line[i+1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
+    else if (c === ',' && !inQ) { out.push(cur); cur = ''; }
+    else { cur += c; }
   }
-  if (buf !== "" || cur.length > 0) { cur.push(buf); rows.push(cur) }
-  return rows.filter(r => r.some(x => x && x.trim() !== ""))
+  out.push(cur);
+  return out.map(s => s.trim());
 }
-function normMethod(s) {
-  const v = (s || "").toString().trim().toUpperCase()
-  if (v.includes("KEEMOTION")) return "Keemotion"
-  if (v.includes("SWISH")) return "Swish Live"
-  if (v.includes("MANUAL")) return "Manual"
-  if (v === "TV") return "TV"
-  return v || "Manual"
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+  const headers = splitCSVLine(lines[0]);
+  return lines.slice(1).map(l => {
+    const cols = splitCSVLine(l);
+    const o = {};
+    headers.forEach((h, i) => o[h] = cols[i] ?? '');
+    return o;
+  });
 }
-function toLocalISO(dateStr, timeStr) {
-  const [d, m, y] = dateStr.split(/[./-]/).map(x => parseInt(x, 10))
-  const [hh, mm] = (timeStr || "00:00").split(":").map(x => parseInt(x, 10))
-  const pad = n => String(n).padStart(2, "0")
-  return `${y}-${pad(m)}-${pad(d)}T${pad(hh)}:${pad(mm)}:00`
+function toDateTimeCH(dateStr, timeStr) {
+  const ds = (dateStr || '').trim();
+  const ts = (timeStr || '').trim();
+  let m = ds.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
+  if (m) {
+    const dd = parseInt(m[1],10), mm = parseInt(m[2],10), yyyy = parseInt(m[3],10);
+    const tt = ts.match(/^(\d{1,2}):(\d{2})$/);
+    const hh = tt ? parseInt(tt[1],10) : 0;
+    const mn = tt ? parseInt(tt[2],10) : 0;
+    return new Date(Date.UTC(yyyy, mm-1, dd, hh, mn, 0));
+  }
+  const t = Date.parse(ds + (ts ? ` ${ts}` : ''));
+  return Number.isNaN(t) ? null : new Date(t);
 }
+function normProd(s) {
+  const v = (s || '').toUpperCase();
+  if (v.includes('KEEMOTION')) return 'Keemotion';
+  if (v.includes('SWISH')) return 'Swish Live';
+  if (v.includes('MANUAL')) return 'Manual';
+  if (v.trim() === 'TV') return 'TV';
+  return '';
+}
+
 export default async function handler(req, res) {
   try {
-    const r = await fetch(SHEET_CSV)
-    if (!r.ok) return res.status(200).json({ items: [] })
-    const csv = await r.text()
-    const rows = parseCSV(csv)
-    if (!rows.length) return res.status(200).json({ items: [] })
-    const header = rows[0].map(h => h.trim().toUpperCase())
-    const idx = {
-      DATE: header.indexOf("DATE"),
-      HOUR: header.indexOf("HOUR"),
-      COMPETITION: header.indexOf("COMPETITION"),
-      DAY: header.indexOf("DAY"),
-      HOME: header.indexOf("HOME"),
-      AWAY: header.indexOf("AWAY"),
-      VENUE: header.indexOf("VENUE"),
-      PRODUCTION: header.indexOf("PRODUCTION")
-    }
-    const now = new Date()
-    const in7 = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
-    const items = rows.slice(1).map(c => {
-      const date = c[idx.DATE] || ""
-      const time = c[idx.HOUR] || ""
-      const dt = toLocalISO(date, time)
+    const r = await fetch(SHEET_CSV);
+    if (!r.ok) throw new Error('sheet');
+    const text = await r.text();
+    const rows = parseCSV(text);
+
+    const now = Date.now();
+    const horizon = now + 30*24*60*60*1000;
+
+    const sheetItems = rows.map(row => {
+      const dateCol = row.Date || row.DATE || row.date || row['Date du match'] || '';
+      const timeCol = row.Time || row.TIME || row.time || row.Heure || '';
+      const teamA = row['Home Team'] || row.Home || row['Equipe A'] || row.TeamA || row.HomeTeam || '';
+      const teamB = row['Away Team'] || row.Away || row['Equipe B'] || row.TeamB || row.AwayTeam || '';
+      const arena = row.Arena || row.Hall || row.Salle || row.Venue || '';
+      const production = row.Production || row['Production'] || row.Prod || row.Method || '';
+      const yt = row['YouTube ID'] || row['YT ID'] || row['YouTube'] || row['youtubeEventId'] || '';
+      const competition = row.Competition || row.League || row['Compétition'] || '';
+      const dt = toDateTimeCH(dateCol, timeCol);
       return {
-        datetime: dt,
-        teamA: c[idx.HOME] || "",
-        teamB: c[idx.AWAY] || "",
-        arena: c[idx.VENUE] || "",
-        method: normMethod(c[idx.PRODUCTION]),
-        production: c[idx.PRODUCTION] || "",
-        competition: c[idx.COMPETITION] || "",
-        day: c[idx.DAY] || "",
-        youtubeEventId: ""
-      }
-    }).filter(x => {
-      const t = new Date(x.datetime)
-      return t >= now && t <= in7
+        datetime: dt ? dt.toISOString() : null,
+        teamA,
+        teamB,
+        arena,
+        production,
+        youtubeEventId: yt,
+        competition,
+        source: 'sheet'
+      };
     })
-    items.sort((a, b) => new Date(a.datetime) - new Date(b.datetime))
-    res.status(200).json({ items })
-  } catch (e) {
-    res.status(200).json({ items: [] })
+    .filter(x => x.datetime)
+    .filter(x => {
+      const t = new Date(x.datetime).getTime();
+      return t >= now && t <= horizon;
+    })
+    .filter(x => !!normProd(x.production));
+
+    let ytItems = [];
+    try {
+      const access = await getAccessToken();
+      const u = new URL('https://www.googleapis.com/youtube/v3/liveBroadcasts');
+      u.searchParams.set('part', 'snippet,contentDetails,status');
+      u.searchParams.set('broadcastStatus', 'upcoming');
+      u.searchParams.set('broadcastType', 'all');
+      u.searchParams.set('mine', 'true');
+      u.searchParams.set('maxResults', '50');
+
+      const yr = await fetch(u.toString(), { headers: { Authorization: `Bearer ${access}` }});
+      if (!yr.ok) throw new Error('yt');
+      const yj = await yr.json();
+
+      ytItems = (yj.items || []).map(b => {
+        const start = b.snippet?.scheduledStartTime || b.snippet?.publishedAt || null;
+        return {
+          datetime: start,
+          teamA: b.snippet?.title || '',
+          teamB: '',
+          arena: '',
+          production: 'Manual',
+          youtubeEventId: b.id,
+          competition: '',
+          source: 'youtube'
+        };
+      }).filter(x => x.datetime).filter(x => new Date(x.datetime).getTime() >= now && new Date(x.datetime).getTime() <= horizon);
+    } catch {}
+
+    const seen = new Set();
+    const merged = [...sheetItems, ...ytItems].filter(it => {
+      if (it.youtubeEventId) {
+        if (seen.has(it.youtubeEventId)) return false;
+        seen.add(it.youtubeEventId);
+      }
+      return true;
+    });
+
+    res.status(200).json({ items: merged });
+  } catch {
+    res.status(200).json({ items: [] });
   }
 }
