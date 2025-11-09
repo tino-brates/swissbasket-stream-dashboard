@@ -9,12 +9,11 @@ function fmtDate(d){const x=new Date(d);return x.toLocaleDateString('fr-CH',{wee
 function fmtTime(d){const x=new Date(d);return x.toLocaleTimeString('fr-CH',{hour:'2-digit',minute:'2-digit'})}
 function withinNextMinutes(d,min){const now=Date.now();const t=new Date(d).getTime();return t>=now&&t<=now+min*60000}
 function isInFuture(d){return new Date(d).getTime()>=Date.now()}
-function timeSince(date){const s=Math.floor((Date.now()-new Date(date))/1000);if(s<60)return `${s}s`;const m=Math.floor(s/60);if(m<60)return `${m} min`;const h=Math.floor(m/60);return `${h} h ${m%60} min`}
+function timeSince(date){const s=Math.floor((Date.now()-new Date(date))/1000);if(s<60)return`${s}s`;const m=Math.floor(s/60);if(m<60)return`${m} min`;const h=Math.floor(m/60);return`${h} h ${m%60} min`}
 
 function startOfWeekMonday(dt){const d=new Date(dt);const day=(d.getDay()+6)%7;d.setHours(0,0,0,0);d.setDate(d.getDate()-day);return d}
 function endOfWeekSunday(dt){const d=startOfWeekMonday(dt);d.setDate(d.getDate()+6);d.setHours(23,59,59,999);return d}
-function endOfNextWeekSunday(dt){const d=startOfWeekMonday(dt);d.setDate(d.getDate()+13);d.setHours(23,59,59,999);return d}
-function endOfNextSundayFromNow(dt){const now=new Date(dt);let end=endOfWeekSunday(now);if(now>startOfWeekMonday(now)&& now> end){end=endOfWeekSunday(new Date(now.getFullYear(),now.getMonth(),now.getDate()+7))}return end}
+function endOfNextWeekSunday(dt){const d=endOfWeekSunday(dt);d.setDate(d.getDate()+7);return d}
 
 function normProd(s){
   const v=(s||'').toString().trim().toUpperCase();
@@ -105,7 +104,7 @@ function inActiveTabRange(d){
   const t=new Date(d).getTime();
   const now=new Date();
   if(state.activeUpcomingTab==='RANGE1'){
-    const end=endOfNextSundayFromNow(now).getTime();
+    const end=endOfWeekSunday(now).getTime();
     return t>=Date.now() && t<=end;
   }else{
     const start=startOfWeekMonday(now).getTime();
