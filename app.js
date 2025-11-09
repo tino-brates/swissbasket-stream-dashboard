@@ -2,12 +2,21 @@ const state = {
   filterProd: 'ALL',
   search: '',
   data: { live: [], issues: [], upcoming: [], health: [] }
-}
+};
 
 function fmtDate(d){const x=new Date(d);return x.toLocaleDateString('fr-CH',{weekday:'short',year:'numeric',month:'2-digit',day:'2-digit'})}
 function fmtTime(d){const x=new Date(d);return x.toLocaleTimeString('fr-CH',{hour:'2-digit',minute:'2-digit'})}
 function withinNextMinutes(d,min){const now=Date.now();const t=new Date(d).getTime();return t>=now&&t<=now+min*60000}
 function isInFuture(d){return new Date(d).getTime()>=Date.now()}
+
+function timeSince(date){
+  const s=Math.floor((Date.now()-new Date(date))/1000)
+  if(s<60)return `${s}s`
+  const m=Math.floor(s/60)
+  if(m<60)return `${m} min`
+  const h=Math.floor(m/60)
+  return `${h} h ${m%60} min`
+}
 
 function normProd(s){
   const v=(s||'').toString().trim().toUpperCase()
@@ -21,6 +30,7 @@ function normProd(s){
 function prodGroup(prod){if(prod==='Swish Live'||prod==='Manual')return'SwishManual';return prod||''}
 function badgeForStatus(s){const map={perfect:'status-perfect',good:'status-good',bad:'status-bad',nodata:'status-nodata'};return map[s]||'status-nodata'}
 
+/* LIVE NOW */
 function renderLive(){
   const box=document.getElementById('liveNow');box.innerHTML=''
   if(!state.data.live.length){
@@ -29,9 +39,7 @@ function renderLive(){
       .filter(x=>x.prod&&isInFuture(x.datetime))
       .sort((a,b)=>new Date(a.datetime)-new Date(b.datetime))
       .slice(0,3)
-    if(next3.length===0){
-      const e=document.createElement('div');e.className='muted';e.textContent='';box.appendChild(e);return
-    }
+    if(next3.length===0){return}
     next3.forEach(x=>{
       const el=document.createElement('div')
       el.className='item'
@@ -43,8 +51,7 @@ function renderLive(){
         <span class="tag">${x.prod}</span>
         <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">
           <span style="font-weight:700;letter-spacing:.1em;border:1px solid currentColor;border-radius:9999px;padding:.2rem .6rem;opacity:.9;">UPCOMING</span>
-        </div>
-      `
+        </div>`
       box.appendChild(el)
     })
     return
@@ -56,6 +63,7 @@ function renderLive(){
   })
 }
 
+/* ISSUES */
 function renderIssues(){
   const box=document.getElementById('issues');box.innerHTML=''
   if(!state.data.issues.length){const e=document.createElement('div');e.className='muted';e.textContent='Aucun problème signalé.';box.appendChild(e);return}
@@ -66,6 +74,7 @@ function renderIssues(){
   })
 }
 
+/* À VENIR (90 min) */
 function renderNext90(){
   const box=document.getElementById('next90');box.innerHTML=''
   const soon=state.data.upcoming.map(x=>({...x,prod:normProd(x.production)})).filter(x=>x.prod&&withinNextMinutes(x.datetime,90))
@@ -77,16 +86,28 @@ function renderNext90(){
   })
 }
 
+/* YOUTUBE HEALTH */
 function renderHealth(){
   const box=document.getElementById('ytHealth');box.innerHTML=''
-  if(!state.data.health.length){const e=document.createElement('div');e.className='muted';e.textContent='Aucun flux détecté.';box.appendChild(e);return}
+  if(!state.data.live.length){return}
+  if(!state.data.health.length){return}
   state.data.health.forEach(x=>{
-    const el=document.createElement('div');el.className='health'
-    el.innerHTML=`<div>${x.name}</div><div class="badge ${badgeForStatus(x.status)}">${x.statusLabel}</div><div class="muted">${x.streamKey||''}</div><div class="muted">${x.lastUpdate?fmtTime(x.lastUpdate):''}</div>`
+    const since=x.lastUpdate?timeSince(x.lastUpdate):''
+    const el=document.createElement('div')
+    el.className='item'
+    el.innerHTML=`
+      <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;width:100%;">
+        <div style="flex:1;min-width:140px;">${x.name}</div>
+        <div class="badge ${badgeForStatus(x.status)}">${x.statusLabel}</div>
+        <div class="muted" style="flex:1;min-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.streamKey||''}</div>
+        <div class="muted" style="white-space:nowrap;">${x.lastUpdate?fmtTime(x.lastUpdate):''}</div>
+        <div class="muted" style="font-size:.8em;opacity:.7;">🕒 il y a ${since}</div>
+      </div>`
     box.appendChild(el)
   })
 }
 
+/* TABLE 7 jours */
 function renderUpcoming(){
   const tbody=document.getElementById('upcomingBody')
   const search=state.search.trim().toLowerCase()
@@ -110,8 +131,16 @@ function renderAll(){renderLive();renderIssues();renderNext90();renderHealth();r
 function setLastUpdate(){const el=document.getElementById('lastUpdate');const d=new Date();el.textContent=d.toLocaleTimeString('fr-CH',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}
 async function fetchJSON(url){const r=await fetch(url);if(!r.ok)throw new Error('http');return await r.json()}
 async function loadData(){
-  const [live,issues,upcoming,health]=await Promise.all([fetchJSON('/api/live'),fetchJSON('/api/issues'),fetchJSON('/api/upcoming'),fetchJSON('/api/health')])
-  state.data.live=live.items||[];state.data.issues=issues.items||[];state.data.upcoming=upcoming.items||[];state.data.health=health.items||[]
+  const [live,issues,upcoming,health]=await Promise.all([
+    fetchJSON('/api/live'),
+    fetchJSON('/api/issues'),
+    fetchJSON('/api/upcoming'),
+    fetchJSON('/api/health')
+  ])
+  state.data.live=live.items||[]
+  state.data.issues=issues.items||[]
+  state.data.upcoming=upcoming.items||[]
+  state.data.health=health.items||[]
   renderAll();setLastUpdate()
 }
 
