@@ -30,7 +30,7 @@ function renderLive(){
       .sort((a,b)=>new Date(a.datetime)-new Date(b.datetime))
       .slice(0,3)
     if(next3.length===0){
-      const e=document.createElement('div');e.className='muted';e.textContent='Time to rest';box.appendChild(e);return
+      const e=document.createElement('div');e.className='muted';e.textContent='';box.appendChild(e);return
     }
     next3.forEach(x=>{
       const el=document.createElement('div')
@@ -69,7 +69,7 @@ function renderIssues(){
 function renderNext90(){
   const box=document.getElementById('next90');box.innerHTML=''
   const soon=state.data.upcoming.map(x=>({...x,prod:normProd(x.production)})).filter(x=>x.prod&&withinNextMinutes(x.datetime,90))
-  if(!soon.length){const e=document.createElement('div');e.className='muted';e.textContent='Aucun match dans les 90 minutes.';box.appendChild(e);return}
+  if(!soon.length){const e=document.createElement('div');e.className='muted';e.textContent='Time to rest 😴';box.appendChild(e);return}
   soon.sort((a,b)=>new Date(a.datetime)-new Date(b.datetime)).forEach(x=>{
     const el=document.createElement('div');el.className='item'
     el.innerHTML=`<div>${fmtDate(x.datetime)} ${fmtTime(x.datetime)}</div><div>${x.teamA} vs ${x.teamB}</div><div>${x.arena}</div><div class="tag">${x.prod}</div>`
