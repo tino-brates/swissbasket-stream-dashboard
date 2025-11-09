@@ -31,13 +31,16 @@ function parseCSV(text){
 function toDateTimeCH(dateStr,timeStr){
   const ds=(dateStr||"").trim();
   const ts=(timeStr||"").trim();
-  // format FR/CH: dd.mm.yyyy ou dd/mm/yyyy
+  // format FR/CH: dd.mm.yyyy / dd/mm/yyyy / dd-mm-yyyy
   const m=ds.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
   if(m){
     const dd=parseInt(m[1],10), mm=parseInt(m[2],10), yyyy=parseInt(m[3],10);
-    const tt=ts.match(/^(\d{1,2}):(\d{2})$/);
-    const hh=tt?parseInt(tt[1],10):0, mn=tt?parseInt(tt[2],10):0;
-    return new Date(Date.UTC(yyyy,mm-1,dd,hh,mn,0));
+    // accepte HH:MM ou HH:MM:SS
+    const tt=ts.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    const hh=tt?parseInt(tt[1],10):0;
+    const mn=tt?parseInt(tt[2],10):0;
+    const ss=tt&&tt[3]?parseInt(tt[3],10):0;
+    return new Date(Date.UTC(yyyy,mm-1,dd,hh,mn,ss));
   }
   const t=Date.parse(ds+(ts?` ${ts}`:""));
   return Number.isNaN(t)?null:new Date(t);
@@ -45,12 +48,12 @@ function toDateTimeCH(dateStr,timeStr){
 function normProd(s){
   const v=(s||"").toUpperCase();
   if(v.includes("KEEMOTION")) return "Keemotion";
-  if(v.includes("SWISH"))     return "Swish Live"; // couvre "SSWISH LIVE" aussi
+  if(v.includes("SWISH"))     return "Swish Live"; // couvre variantes type "SSWISH LIVE"
   if(v.includes("MANUAL"))    return "Manual";
   if(v.trim()==="TV")         return "TV";
   return "";
 }
-function getCI(map, ...keys){ // case-insensitive getter
+function getCI(map, ...keys){
   for(const k of keys){
     const kk=k.toLowerCase();
     if(kk in map) return map[kk];
@@ -69,7 +72,6 @@ export default async function handler(req,res){
     const horizon=now + 30*24*60*60*1000; // 30 jours
 
     const items = rows.map(row=>{
-      // on fabrique une map "clé en minuscules" -> valeur
       const m={};
       Object.keys(row).forEach(k=>{ m[k.trim().toLowerCase()] = (row[k]||"").trim(); });
 
@@ -92,11 +94,10 @@ export default async function handler(req,res){
         competition: comp
       };
     })
-    .filter(x => x.datetime)                                   // besoin d'une date
-    .filter(x => { const t=new Date(x.datetime).getTime();     // dans l'horizon
-                   return t>=now && t<=horizon; })
-    .map(x => ({ ...x, production: normProd(x.production) }))  // normalisation
-    .filter(x => !!x.production);                               // on garde seulement streamés
+    .filter(x => x.datetime)
+    .filter(x => { const t=new Date(x.datetime).getTime(); return t>=now && t<=horizon; })
+    .map(x => ({ ...x, production: normProd(x.production) }))
+    .filter(x => !!x.production);
 
     res.status(200).json({ items });
   }catch(e){
