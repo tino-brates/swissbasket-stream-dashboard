@@ -5,33 +5,17 @@ const state = {
   data: { live: [], issues: [], upcoming: [], health: [] }
 };
 
-// ---------- utils dates (local) ----------
-function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
-function startOfDay(d){ const x=new Date(d); x.setHours(0,0,0,0); return x; }
-function endOfDay(d){ const x=new Date(d); x.setHours(23,59,59,999); return x; }
-
-// Lundi = début de semaine
-function startOfWeekMonday(base){
-  const d = new Date(base);
-  const day = (d.getDay()+6)%7; // 0..6 (lundi=0)
-  return startOfDay(addDays(d, -day));
-}
-function endOfWeekSunday(base){
-  const weekStart = startOfWeekMonday(base);
-  return endOfDay(addDays(weekStart, 6));
-}
-function endOfNextWeekSunday(base){
-  const thisSun = endOfWeekSunday(base);
-  return endOfDay(addDays(thisSun, 7)); // dimanche de la semaine suivante
-}
-// ---------- formatting ----------
 function fmtDate(d){const x=new Date(d);return x.toLocaleDateString('fr-CH',{weekday:'short',year:'numeric',month:'2-digit',day:'2-digit'})}
 function fmtTime(d){const x=new Date(d);return x.toLocaleTimeString('fr-CH',{hour:'2-digit',minute:'2-digit'})}
 function withinNextMinutes(d,min){const now=Date.now();const t=new Date(d).getTime();return t>=now&&t<=now+min*60000}
 function isInFuture(d){return new Date(d).getTime()>=Date.now()}
-function timeSince(date){const s=Math.floor((Date.now()-new Date(date))/1000);if(s<60)return`${s}s`;const m=Math.floor(s/60);if(m<60)return`${m} min`;const h=Math.floor(m/60);return`${h} h ${m%60} min`}
+function timeSince(date){const s=Math.floor((Date.now()-new Date(date))/1000);if(s<60)return `${s}s`;const m=Math.floor(s/60);if(m<60)return `${m} min`;const h=Math.floor(m/60);return `${h} h ${m%60} min`}
 
-// ---------- mapping/labels ----------
+function startOfWeekMonday(dt){const d=new Date(dt);const day=(d.getDay()+6)%7;d.setHours(0,0,0,0);d.setDate(d.getDate()-day);return d}
+function endOfWeekSunday(dt){const d=startOfWeekMonday(dt);d.setDate(d.getDate()+6);d.setHours(23,59,59,999);return d}
+function endOfNextWeekSunday(dt){const d=startOfWeekMonday(dt);d.setDate(d.getDate()+13);d.setHours(23,59,59,999);return d}
+function endOfNextSundayFromNow(dt){const now=new Date(dt);let end=endOfWeekSunday(now);if(now>startOfWeekMonday(now)&& now> end){end=endOfWeekSunday(new Date(now.getFullYear(),now.getMonth(),now.getDate()+7))}return end}
+
 function normProd(s){
   const v=(s||'').toString().trim().toUpperCase();
   if(!v) return '';
@@ -44,7 +28,6 @@ function normProd(s){
 function prodGroup(p){if(p==='Swish Live'||p==='Manual')return'SwishManual';return p||''}
 function badgeForStatus(s){const map={perfect:'status-perfect',good:'status-good',bad:'status-bad',nodata:'status-nodata'};return map[s]||'status-nodata'}
 
-// ---------- sections ----------
 function renderLive(){
   const box=document.getElementById('liveNow');box.innerHTML='';
   if(!state.data.live.length){
@@ -118,18 +101,16 @@ function renderHealth(){
   });
 }
 
-// borne de filtrage par onglet
 function inActiveTabRange(d){
-  const t = new Date(d).getTime();
-  const now = new Date();
-  if (state.activeUpcomingTab === 'RANGE1') {
-    const start = Date.now();                    // maintenant
-    const end = endOfWeekSunday(now).getTime();  // dimanche 23:59:59.999
-    return t >= start && t <= end;
-  } else {
-    const start = startOfWeekMonday(now).getTime();     // lundi 00:00 de cette semaine
-    const end = endOfNextWeekSunday(now).getTime();     // dimanche 23:59:59.999 de la semaine suivante
-    return t >= start && t <= end;
+  const t=new Date(d).getTime();
+  const now=new Date();
+  if(state.activeUpcomingTab==='RANGE1'){
+    const end=endOfNextSundayFromNow(now).getTime();
+    return t>=Date.now() && t<=end;
+  }else{
+    const start=startOfWeekMonday(now).getTime();
+    const end=endOfNextWeekSunday(now).getTime();
+    return t>=start && t<=end;
   }
 }
 
@@ -140,6 +121,7 @@ function renderUpcoming(){
     .map(x=>({...x,prod:normProd(x.production),group:prodGroup(normProd(x.production))}))
     .filter(x=>x.prod)
     .filter(x=>inActiveTabRange(x.datetime))
+    .filter(x=>state.filterProd==='ALL'?true:x.group===state.filterProd)
     .filter(x=>{
       if(!search) return true;
       return [x.teamA,x.teamB,x.arena,x.production,x.competition].some(v=>(v||'').toLowerCase().includes(search));
@@ -152,7 +134,6 @@ function renderUpcoming(){
   });
 }
 
-// ---------- boot ----------
 function renderAll(){renderLive();renderIssues();renderNext90();renderHealth();renderUpcoming()}
 function setLastUpdate(){const el=document.getElementById('lastUpdate');const d=new Date();el.textContent=d.toLocaleTimeString('fr-CH',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}
 async function fetchJSON(url){const r=await fetch(url);if(!r.ok)throw new Error('http');return await r.json()}
