@@ -1,29 +1,25 @@
 // ---------- Keemotion Issues (arenas critiques) ----------
 
-// Base & params (depuis Vercel si dispo)
 const BASE = (process.env.KEEMOTION_API_BASE || "https://pointguard.keemotion.com").replace(/\/$/, "");
 const ARENAS_BASEPATH = process.env.KEEMOTION_ARENAS_BASEPATH || "/game/arenas";
 const LIMIT  = process.env.KEEMOTION_LIMIT  || "25";
 const OFFSET = process.env.KEEMOTION_OFFSET || "0";
 
-// Auth côté arenas (après obtention du token)
 const SCHEME = process.env.KEEMOTION_AUTH_SCHEME || "OAuth2";
 let   STATIC_TOKEN = process.env.KEEMOTION_TOKEN || "";
 const COOKIE_T     = process.env.KEEMOTION_COOKIE_T || "";
 
-// En-têtes et UA (séparés pour token vs data)
+// Toujours ces valeurs exactes (pour éliminer les typos côté env)
+const AGENT_TOKEN_FOR_AUTH = "Auth0 3.3.0";           // pour PUT /auth/token (obligatoire)
+const AGENT_FOR_ARENAS     = "KeecastWeb 5.24.2";     // pour GET /game/arenas...
+
 const ORIGIN  = process.env.KEEMOTION_ORIGIN  || "https://sportshub.keemotion.com";
 const REFERER = process.env.KEEMOTION_REFERER || "https://sportshub.keemotion.com/";
 const ALANG   = process.env.KEEMOTION_ACCEPT_LANGUAGE
   || "fr-CH,fr;q=0.9,de-DE;q=0.8,de;q=0.7,en-US;q=0.6,en;q=0.5,fr-FR;q=0.4";
+const UA_BROWSER = process.env.KEEMOTION_UA_BROWSER
+  || "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36";
 
-// UA/Agent observés dans tes captures
-const AGENT_TOKEN_PRIMARY   = process.env.KEEMOTION_AGENT_TOKEN_PRIMARY   || "Auth0 3.3.0";       // pour /auth/token
-const AGENT_TOKEN_FALLBACK  = process.env.KEEMOTION_AGENT_TOKEN_FALLBACK  || "KeecastWeb 5.24.2"; // fallback au cas où
-const AGENT_ARENAS          = process.env.KEEMOTION_AGENT_ARENAS          || "KeecastWeb 5.24.2"; // pour /game/arenas
-const UA_BROWSER            = process.env.KEEMOTION_UA_BROWSER            || "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36";
-
-// Helpers headers
 function baseHeaders(extra = {}) {
   return {
     Accept: "application/json",
@@ -35,7 +31,6 @@ function baseHeaders(extra = {}) {
   };
 }
 
-// URLs candidates (selon tenants)
 function arenasURLs() {
   const p = ARENAS_BASEPATH.startsWith("/") ? ARENAS_BASEPATH : `/${ARENAS_BASEPATH}`;
   return [
@@ -54,37 +49,6 @@ async function fetchJSON(url, options) {
   return { ok: r.ok, status: r.status, headers: r.headers, json, raw };
 }
 
-// Essaye d’obtenir un token depuis /auth/token en envoyant Keemotion-Agent = Auth0 3.3.0
-async function tryTokenWithAgent(agentLabel) {
-  const headers = baseHeaders({
-    "Keemotion-Agent": agentLabel,
-    "Content-Type": "application/json",
-    Cookie: COOKIE_T ? `t=${COOKIE_T}` : undefined,
-    "Cache-Control": "no-cache",
-    "X-Requested-With": "XMLHttpRequest",
-  });
-
-  // Méthode observée : PUT /auth/token -> 201 Created
-  const url = `${BASE}/auth/token`;
-  const put = await fetchJSON(url, { method: "PUT", headers, body: "{}" });
-
-  // Tentatives d’extraction
-  const candidates = [
-    put.json?.access_token, put.json?.accessToken, put.json?.token, put.json?.jwt
-  ].filter(Boolean);
-
-  let token = candidates[0] || null;
-
-  if (!token) {
-    const ah = put.headers?.get("Authorization") || put.headers?.get("authorization");
-    if (ah && /[A-Za-z0-9\-\._~\+\/=]{20,}/.test(ah)) {
-      token = ah.replace(/^OAuth2\s+/i, "").replace(/^Bearer\s+/i, "");
-    }
-  }
-
-  return { token, resp: put };
-}
-
 async function obtainTokenFromCookie() {
   const debug = { tried: [], tokenFound: false, tokenSource: null };
 
@@ -93,22 +57,35 @@ async function obtainTokenFromCookie() {
     return { token: null, debug };
   }
 
-  // 1) Agent "Auth0 3.3.0" (ce que ton navigateur envoie) —> priorité
-  const p1 = await tryTokenWithAgent(AGENT_TOKEN_PRIMARY);
-  debug.tried.push({ step: `PUT /auth/token [${AGENT_TOKEN_PRIMARY}]`, status: p1.resp.status, raw: p1.resp.raw?.slice(0, 200) });
-  if (p1.token) { debug.tokenFound = true; debug.tokenSource = AGENT_TOKEN_PRIMARY; return { token: p1.token, debug }; }
+  // Tentative 1: EXACT "Auth0 3.3.0" (clé du succès)
+  {
+    const headers = baseHeaders({
+      "Keemotion-Agent": AGENT_TOKEN_FOR_AUTH,
+      "Content-Type": "application/json",
+      Cookie: `t=${COOKIE_T}`,
+      "Cache-Control": "no-cache",
+      "X-Requested-With": "XMLHttpRequest",
+    });
 
-  // 2) Fallback KeecastWeb si jamais le tenant a ce contrôle inversé
-  const p2 = await tryTokenWithAgent(AGENT_TOKEN_FALLBACK);
-  debug.tried.push({ step: `PUT /auth/token [${AGENT_TOKEN_FALLBACK}]`, status: p2.resp.status, raw: p2.resp.raw?.slice(0, 200) });
-  if (p2.token) { debug.tokenFound = true; debug.tokenSource = AGENT_TOKEN_FALLBACK; return { token: p2.token, debug }; }
+    // corps vide OK, mais pour ressembler au trafic réel on met un petit JSON
+    const resp = await fetchJSON(`${BASE}/auth/token`, { method: "PUT", headers, body: JSON.stringify({ from: "web" }) });
+    debug.tried.push({ step: `PUT /auth/token [${AGENT_TOKEN_FOR_AUTH}]`, status: resp.status, raw: resp.raw?.slice(0,200) });
 
-  // 3) GET /me en dernier recours
-  const me = await fetchJSON(`${BASE}/me`, baseHeaders({ Cookie: COOKIE_T ? `t=${COOKIE_T}` : undefined }));
-  debug.tried.push({ step: "GET /me", status: me.status, raw: me.raw?.slice(0, 200) });
+    const token = resp.json?.access_token || resp.json?.accessToken || resp.json?.token || resp.json?.jwt
+      || (resp.headers?.get("Authorization") || "").replace(/^OAuth2\s+/i, "").replace(/^Bearer\s+/i, "");
 
-  const m = me.raw && me.raw.match(/eyJ[A-Za-z0-9\-\._=]{10,}|[A-Za-z0-9\-\._~\+\/=]{30,}/);
-  if (m) { debug.tokenFound = true; debug.tokenSource = "regex(/me)"; return { token: m[0], debug }; }
+    if (token) { debug.tokenFound = true; debug.tokenSource = AGENT_TOKEN_FOR_AUTH; return { token, debug }; }
+  }
+
+  // Tentative 2: GET /me (parfois renvoie un blob contenant le jwt)
+  {
+    const headers = baseHeaders({ Cookie: `t=${COOKIE_T}` });
+    const resp = await fetchJSON(`${BASE}/me`, { method: "GET", headers });
+    debug.tried.push({ step: "GET /me", status: resp.status, raw: resp.raw?.slice(0,200) });
+
+    const m = resp.raw && resp.raw.match(/eyJ[A-Za-z0-9\-\._=]{10,}|[A-Za-z0-9\-\._~\+\/=]{30,}/);
+    if (m) { debug.tokenFound = true; debug.tokenSource = "regex(/me)"; return { token: m[0], debug }; }
+  }
 
   return { token: null, debug };
 }
@@ -152,7 +129,7 @@ export default async function handler(req, res) {
   const debug = { authFlow: {}, usedUrl: null, sentCookie: !!COOKIE_T };
 
   try {
-    // 1) Token
+    // 1) token
     let token = STATIC_TOKEN || null;
     if (!token) {
       const r = await obtainTokenFromCookie();
@@ -163,13 +140,13 @@ export default async function handler(req, res) {
       debug.authFlow = { usedStaticEnvToken: true };
     }
 
-    // 2) Requête arenas (avec KeecastWeb côté agent)
+    // 2) arenas
     const urls = arenasURLs();
     let data = null, last = { status: 0 };
 
     for (const u of urls) {
       const headers = baseHeaders({
-        "Keemotion-Agent": AGENT_ARENAS,
+        "Keemotion-Agent": AGENT_FOR_ARENAS,
         Authorization: token ? `${SCHEME} ${token}` : undefined,
         Cookie: COOKIE_T ? `t=${COOKIE_T}` : undefined,
       });
