@@ -10,39 +10,31 @@ function fmtTime(d){const x=new Date(d);return x.toLocaleTimeString('fr-CH',{hou
 function withinNextMinutes(d,min){const now=Date.now();const t=new Date(d).getTime();return t>=now&&t<=now+min*60000}
 function isInFuture(d){return new Date(d).getTime()>=Date.now()}
 function timeSince(date){const s=Math.floor((Date.now()-new Date(date))/1000);if(s<60)return `${s}s`;const m=Math.floor(s/60);if(m<60)return `${m} min`;const h=Math.floor(m/60);return `${h} h ${m%60} min`}
+function pad2(n){return n<10?`0${n}`:`${n}`}
+function elapsedHM(start){
+  if(!start) return "";
+  const secs = Math.max(0, Math.floor((Date.now()-new Date(start).getTime())/1000));
+  const h = Math.floor(secs/3600);
+  const m = Math.floor((secs%3600)/60);
+  const s = secs%60;
+  return h>0 ? `${pad2(h)}:${pad2(m)}` : `${pad2(m)}:${pad2(s)}`;
+}
 
 function startOfWeekMonday(dt){const d=new Date(dt);const day=(d.getDay()+6)%7;d.setHours(0,0,0,0);d.setDate(d.getDate()-day);return d}
 function endOfWeekSunday(dt){const d=startOfWeekMonday(dt);d.setDate(d.getDate()+6);d.setHours(23,59,59,999);return d}
+function endOfComingSunday(dt){const d=new Date(dt);const day=d.getDay();const add=(7-day)%7;const end=new Date(d);end.setDate(d.getDate()+add);end.setHours(23,59,59,999);return end}
+function endOfNextWeekSunday(dt){const d=startOfWeekMonday(dt);d.setDate(d.getDate()+13);d.setHours(23,59,59,999);return d}
+function endOfNextSundayFromNow(dt){const now=new Date(dt);let end=endOfWeekSunday(now);if(now>startOfWeekMonday(now)&& now> end){end=endOfWeekSunday(new Date(now.getFullYear(),now.getMonth(),now.getDate()+7))}return end}
 
-// ✅ version corrigée
-function endOfComingSunday(dt){
-  const d = new Date(dt);
-  const day = d.getDay(); // 0 = dimanche
-  const add = (7 - day) % 7; // si on est dimanche => 0
-  const end = new Date(d);
-  end.setDate(d.getDate() + add);
-  end.setHours(23,59,59,999);
-  return end;
-}
-
-function endOfNextWeekSunday(dt){const d=startOfWeekMonday(dt);d.setDate(d.getDate()+13);d.setHours(23,59,59,999);return d;}
-function endOfNextSundayFromNow(dt){const now=new Date(dt);let end=endOfWeekSunday(now);if(now>startOfWeekMonday(now)&& now> end){end=endOfWeekSunday(new Date(now.getFullYear(),now.getMonth(),now.getDate()+7))}return end;}
-
-function normProd(s){
-  const v=(s||'').toString().trim().toUpperCase();
-  if(!v) return '';
-  if(v.includes('KEEMOTION')) return 'Keemotion';
-  if(v.includes('SWISH')) return 'Swish Live';
-  if(v.includes('MANUAL')) return 'Manual';
-  if(v==='TV') return 'TV';
-  return '';
-}
+function normProd(s){const v=(s||'').toUpperCase();if(!v)return'';if(v.includes('KEEMOTION'))return'Keemotion';if(v.includes('SWISH'))return'Swish Live';if(v.includes('MANUAL'))return'Manual';if(v==='TV')return'TV';return''}
 function prodGroup(p){if(p==='Swish Live'||p==='Manual')return'SwishManual';return p||''}
 function badgeForStatus(s){const map={perfect:'status-perfect',good:'status-good',bad:'status-bad',nodata:'status-nodata'};return map[s]||'status-nodata'}
 
+/* ---------- LIVE NOW (YouTube) ---------- */
 function renderLive(){
   const box=document.getElementById('liveNow');box.innerHTML='';
   if(!state.data.live.length){
+    // Fallback "UPCOMING" (3 prochains) si aucun live
     const next3=state.data.upcoming
       .map(x=>({...x,prod:normProd(x.production)}))
       .filter(x=>x.prod&&isInFuture(x.datetime))
@@ -65,13 +57,20 @@ function renderLive(){
     });
     return;
   }
+
+  // Lives actifs : titre YT + temps écoulé + bouton Ouvrir
   state.data.live.forEach(x=>{
     const el=document.createElement('div');el.className='item';
-    el.innerHTML=`<div>${x.title}</div><div>${x.arena||''}</div><div>${fmtTime(x.startedAt||Date.now())}</div><a class="tag" href="${x.url}" target="_blank">Ouvrir</a>`;
+    el.innerHTML=`
+      <div style="font-weight:600;">${x.title}</div>
+      <div></div>
+      <div>${elapsedHM(x.startedAt)}</div>
+      <a class="tag" href="${x.url}" target="_blank">Ouvrir</a>`;
     box.appendChild(el);
   });
 }
 
+/* ---------- ISSUES ---------- */
 function renderIssues(){
   const box=document.getElementById('issues');box.innerHTML='';
   if(!state.data.issues.length){const e=document.createElement('div');e.className='muted';e.textContent='Aucun problème signalé.';box.appendChild(e);return}
@@ -82,6 +81,7 @@ function renderIssues(){
   });
 }
 
+/* ---------- À VENIR (90 min) ---------- */
 function renderNext90(){
   const box=document.getElementById('next90');box.innerHTML='';
   const soon=state.data.upcoming.map(x=>({...x,prod:normProd(x.production)})).filter(x=>x.prod&&withinNextMinutes(x.datetime,90));
@@ -93,6 +93,7 @@ function renderNext90(){
   });
 }
 
+/* ---------- HEALTH (YT ingest) ---------- */
 function renderHealth(){
   const box=document.getElementById('ytHealth');box.innerHTML='';
   if(!state.data.live.length){return}
@@ -113,11 +114,12 @@ function renderHealth(){
   });
 }
 
+/* ---------- CALENDRIER (sheet) ---------- */
 function inActiveTabRange(d){
   const t=new Date(d).getTime();
   const now=new Date();
   if(state.activeUpcomingTab==='RANGE1'){
-    const end=endOfComingSunday(now).getTime(); // ✅ corrigé
+    const end=endOfComingSunday(now).getTime();
     return t>=Date.now() && t<=end;
   }else{
     const start=startOfWeekMonday(now).getTime();
@@ -141,17 +143,34 @@ function renderUpcoming(){
   tbody.innerHTML='';
   rows.sort((a,b)=>new Date(a.datetime)-new Date(b.datetime)).forEach(x=>{
     const tr=document.createElement('tr');const dt=new Date(x.datetime);
-    tr.innerHTML=`<td>${fmtDate(dt)}</td><td>${fmtTime(dt)}</td><td>${x.competition||''}</td><td>${x.teamA}</td><td>${x.teamB}</td><td>${x.arena}</td><td>${x.prod}</td><td>${x.youtubeEventId?`<a target="_blank" href="https://www.youtube.com/live/${x.youtubeEventId}">${x.youtubeEventId}</a>`:''}</td>`;
+    tr.innerHTML=`
+      <td>${fmtDate(dt)}</td>
+      <td>${fmtTime(dt)}</td>
+      <td>${x.competition||''}</td>
+      <td>${x.teamA}</td>
+      <td>${x.teamB}</td>
+      <td>${x.arena}</td>
+      <td>${x.prod}</td>
+      <td>${x.youtubeEventId?`<a target="_blank" href="https://www.youtube.com/live/${x.youtubeEventId}">${x.youtubeEventId}</a>`:''}</td>`;
     tbody.appendChild(tr);
   });
 }
 
+/* ---------- LOAD / EVENTS ---------- */
 function renderAll(){renderLive();renderIssues();renderNext90();renderHealth();renderUpcoming()}
 function setLastUpdate(){const el=document.getElementById('lastUpdate');const d=new Date();el.textContent=d.toLocaleTimeString('fr-CH',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}
 async function fetchJSON(url){const r=await fetch(url);if(!r.ok)throw new Error('http');return await r.json()}
 async function loadData(){
-  const [live,issues,upcoming,health]=await Promise.all([fetchJSON('/api/live'),fetchJSON('/api/issues'),fetchJSON('/api/upcoming'),fetchJSON('/api/health')]);
-  state.data.live=live.items||[];state.data.issues=issues.items||[];state.data.upcoming=upcoming.items||[];state.data.health=health.items||[];
+  const [live,issues,upcoming,health]=await Promise.all([
+    fetchJSON('/api/live'),
+    fetchJSON('/api/issues'),
+    fetchJSON('/api/upcoming'),
+    fetchJSON('/api/health')
+  ]);
+  state.data.live=live.items||[];
+  state.data.issues=issues.items||[];
+  state.data.upcoming=upcoming.items||[];
+  state.data.health=health.items||[];
   renderAll();setLastUpdate();
 }
 
