@@ -21,6 +21,7 @@ function endOfNextWeekSunday(dt){const d=startOfWeekMonday(dt);d.setDate(d.getDa
 function normProd(s){const v=(s||'').toUpperCase();if(!v)return'';if(v.includes('KEEMOTION'))return'Keemotion';if(v.includes('SWISH'))return'Swish Live';if(v.includes('MANUAL'))return'Manual';if(v==='TV')return'TV';return''}
 function prodGroup(p){if(p==='Swish Live'||p==='Manual')return'SwishManual';return p||''}
 function badgeForStatus(s){const map={perfect:'status-perfect',good:'status-good',bad:'status-bad',nodata:'status-nodata'};return map[s]||'status-nodata'}
+function badgeForIssue(s){const map={sufficient:'status-ok',insufficient:'status-warn',offline:'status-error',unknown:'status-nodata'};return map[s]||'status-nodata'}
 
 function renderLive(){
   const box=document.getElementById('liveNow');box.innerHTML='';
@@ -36,7 +37,6 @@ function renderLive(){
     });
     return;
   }
-
   let next3=(state.data.ytUpcoming||[])
     .filter(x=>x.scheduledStart?isInFuture(x.scheduledStart):true)
     .sort((a,b)=>{
@@ -46,7 +46,6 @@ function renderLive(){
     })
     .slice(0,3)
     .map(x=>({title:x.title, when:x.scheduledStart?`${fmtDate(x.scheduledStart)} ${fmtTime(x.scheduledStart)}`:"Heure N/A", url:x.url, tag:'UPCOMING'}));
-
   if(next3.length===0){
     next3=state.data.upcoming
       .map(x=>({...x,prod:normProd(x.production)}))
@@ -55,7 +54,6 @@ function renderLive(){
       .slice(0,3)
       .map(x=>({title:`${x.teamA} vs ${x.teamB}`, when:`${fmtDate(x.datetime)} ${fmtTime(x.datetime)}`, url:'', tag:x.prod}));
   }
-
   if(next3.length===0){return}
   next3.forEach(x=>{
     const el=document.createElement('div');
@@ -78,7 +76,8 @@ function renderIssues(){
   if(!state.data.issues.length){const e=document.createElement('div');e.className='muted';e.textContent='Aucun problème signalé.';box.appendChild(e);return}
   state.data.issues.forEach(x=>{
     const el=document.createElement('div');el.className='item';
-    el.innerHTML=`<div>${x.arena}</div><div>${x.vendor}</div><div>${x.note||''}</div><div class="tag">${x.status}</div>`;
+    const cls=badgeForIssue(x.statusCode||'unknown');
+    el.innerHTML=`<div>${x.arena}</div><div>${x.vendor}</div><div>${x.note||''}</div><div class="badge ${cls}">${x.status||''}</div>`;
     box.appendChild(el);
   });
 }
@@ -190,12 +189,21 @@ async function loadYouTube(){
   renderLive(); renderNext90(); setLastUpdate();
 }
 
-document.getElementById('refreshBtn').addEventListener('click',()=>{loadCalendars();loadYouTube()});
+async function loadIssues(){
+  const issues = await fetchJSON('/api/issues');
+  state.data.issues = issues.items || [];
+  renderIssues();
+}
+
+document.getElementById('refreshBtn').addEventListener('click',()=>{loadCalendars();loadYouTube();loadIssues()});
 document.getElementById('prodFilter').addEventListener('change',e=>{state.filterProd=e.target.value;renderUpcoming()});
 document.getElementById('searchInput').addEventListener('input',e=>{state.search=e.target.value;renderUpcoming()});
 document.getElementById('tabRange1').addEventListener('click',()=>{state.activeUpcomingTab='RANGE1';document.getElementById('tabRange1').classList.add('active');document.getElementById('tabRange2').classList.remove('active');renderUpcoming()});
 document.getElementById('tabRange2').addEventListener('click',()=>{state.activeUpcomingTab='RANGE2';document.getElementById('tabRange2').classList.add('active');document.getElementById('tabRange1').classList.remove('active');renderUpcoming()});
 
-loadCalendars(); loadYouTube();
+loadCalendars();
+loadYouTube();
+loadIssues();
 setInterval(loadCalendars, 10000);
 setInterval(loadYouTube, 60000);
+setInterval(loadIssues, 60000);
