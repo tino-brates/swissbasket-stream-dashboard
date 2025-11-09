@@ -2,7 +2,7 @@
 *{box-sizing:border-box}
 html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial}
-.wrap{max-width:1200px;margin:0 auto;padding:16px}
+.wrap{max-width:1440px;margin:0 auto;padding:16px}
 .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
 .header h1{font-size:20px;margin:0}
 .header-actions{display:flex;gap:10px;align-items:center}
@@ -15,9 +15,11 @@ body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-ap
 @media(max-width:900px){.grid{grid-template-columns:1fr}}
 
 .list{display:flex;flex-direction:column;gap:10px}
-.item{display:grid;grid-template-columns:1.2fr 1fr auto auto;gap:10px;align-items:center;background:#1d212c;border:1px solid #262b37;border-radius:14px;padding:12px}
+.item{display:grid;grid-template-columns:1.2fr 1fr auto auto auto;gap:10px;align-items:center;background:#1d212c;border:1px solid #262b37;border-radius:14px;padding:12px}
 .item .tag{background:#1f2733;border:1px solid #2b3442;border-radius:9999px;padding:4px 10px;text-decoration:none;color:#cfe3ff}
+.item .tag.alt{background:#262c3a;color:#d9e6ff;border-color:#33405a}
 .muted{color:var(--muted)}
+.date-mini{font-size:.85rem;opacity:.9}
 
 .badge{border-radius:9999px;padding:4px 10px;border:1px solid #2b3442;background:#1f2733}
 .status-perfect{background:#11261c;border-color:#1c3b2b;color:#7ef2b1}
@@ -33,6 +35,10 @@ body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-ap
 .filters{display:flex;gap:10px;align-items:center;margin:10px 0}
 .filters select,.filters input{background:#1c222d;border:1px solid #2b3442;color:#e6e7eb;border-radius:10px;padding:8px 10px}
 .table-wrap{overflow:auto;border:1px solid #222632;border-radius:12px}
-.table{width:100%;border-collapse:separate;border-spacing:0}
-.table th,.table td{padding:10px 12px;border-bottom:1px solid #232834;text-align:left;white-space:nowrap}
-.table thead th{position:sticky;top:0;background:#1a1f29}
+
+/* pas de nowrap global -> on laisse la table occuper la largeur et les colonnes longues peuvent revenir à la ligne */
+.table{width:100%;border-collapse:separate;border-spacing:0;table-layout:auto}
+.table th,.table td{padding:10px 12px;border-bottom:1px solid #232834;text-align:left;vertical-align:top}
+
+/* on force seulement certaines colonnes à rester sur une ligne */
+.nowrap{white-space:nowrap}
