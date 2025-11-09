@@ -14,15 +14,27 @@ function timeSince(date){const s=Math.floor((Date.now()-new Date(date))/1000);if
 function startOfWeekMonday(dt){const d=new Date(dt);const day=(d.getDay()+6)%7;d.setHours(0,0,0,0);d.setDate(d.getDate()-day);return d}
 function endOfWeekSunday(dt){const d=startOfWeekMonday(dt);d.setDate(d.getDate()+6);d.setHours(23,59,59,999);return d}
 function endOfNextWeekSunday(dt){const d=startOfWeekMonday(dt);d.setDate(d.getDate()+13);d.setHours(23,59,59,999);return d}
-function endOfNextSundayFromNow(dt){const now=new Date(dt);let end=endOfWeekSunday(now);if(now>startOfWeekMonday(now)&&now>end){end=endOfWeekSunday(new Date(now.getFullYear(),now.getMonth(),now.getDate()+7))}return end}
+
+/**
+ * Prochain dimanche (toujours le SUIVANT, même si on est dimanche aujourd’hui)
+ */
+function endOfComingSunday(dt){
+  const d=new Date(dt);
+  const day=d.getDay();           // 0 = dimanche
+  const add=((7-day)%7)||7;       // si on est dimanche -> +7
+  const end=new Date(d);
+  end.setDate(d.getDate()+add);
+  end.setHours(23,59,59,999);
+  return end;
+}
 
 function normProd(s){
   const v=(s||'').toString().trim().toUpperCase();
   if(!v) return '';
   if(v.includes('KEEMOTION')) return 'Keemotion';
-  if(v.includes('SWISH')) return 'Swish Live';
-  if(v.includes('MANUAL')) return 'Manual';
-  if(v==='TV') return 'TV';
+  if(v.includes('SWISH'))     return 'Swish Live';
+  if(v.includes('MANUAL'))    return 'Manual';
+  if(v==='TV')                return 'TV';
   return '';
 }
 function prodGroup(p){if(p==='Swish Live'||p==='Manual')return'SwishManual';return p||''}
@@ -42,7 +54,7 @@ function renderLive(){
       el.className='item';
       el.setAttribute('style','position:relative;opacity:.45;');
       el.innerHTML=`
-        <div>${x.teamA} vs ${x.teamB}</div>
+        <div>${x.teamA||'vs'} ${x.teamA?'vs':''} ${x.teamB||''}</div>
         <div>${x.arena||''}</div>
         <div class="date-mini">${fmtDate(x.datetime)} ${fmtTime(x.datetime)}</div>
         <span class="tag">${x.prod}</span>
@@ -113,7 +125,7 @@ function inActiveTabRange(d){
   const t=new Date(d).getTime();
   const now=new Date();
   if(state.activeUpcomingTab==='RANGE1'){
-    const end=endOfNextSundayFromNow(now).getTime();
+    const end=endOfComingSunday(now).getTime(); // <-- corrigé
     return t>=Date.now() && t<=end;
   }else{
     const start=startOfWeekMonday(now).getTime();
