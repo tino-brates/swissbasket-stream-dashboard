@@ -7,6 +7,7 @@ const state = {
 function fmtDate(d){const x=new Date(d);return x.toLocaleDateString('fr-CH',{weekday:'short',year:'numeric',month:'2-digit',day:'2-digit'})}
 function fmtTime(d){const x=new Date(d);return x.toLocaleTimeString('fr-CH',{hour:'2-digit',minute:'2-digit'})}
 function withinNextMinutes(d,min){const now=Date.now();const t=new Date(d).getTime();return t>=now&&t<=now+min*60000}
+function isInFuture(d){return new Date(d).getTime()>=Date.now()}
 
 function normProd(s){
   const v=(s||'').toString().trim().toUpperCase()
@@ -17,16 +18,37 @@ function normProd(s){
   if(v==='TV') return 'TV'
   return ''
 }
-function prodGroup(prod){
-  if(prod==='Swish Live' || prod==='Manual') return 'SwishManual'
-  return prod || ''
-}
-
+function prodGroup(prod){if(prod==='Swish Live'||prod==='Manual')return'SwishManual';return prod||''}
 function badgeForStatus(s){const map={perfect:'status-perfect',good:'status-good',bad:'status-bad',nodata:'status-nodata'};return map[s]||'status-nodata'}
 
 function renderLive(){
   const box=document.getElementById('liveNow');box.innerHTML=''
-  if(!state.data.live.length){const e=document.createElement('div');e.className='muted';e.textContent='Aucun live en cours.';box.appendChild(e);return}
+  if(!state.data.live.length){
+    const next3=state.data.upcoming
+      .map(x=>({...x,prod:normProd(x.production)}))
+      .filter(x=>x.prod&&isInFuture(x.datetime))
+      .sort((a,b)=>new Date(a.datetime)-new Date(b.datetime))
+      .slice(0,3)
+    if(next3.length===0){
+      const e=document.createElement('div');e.className='muted';e.textContent='Time to rest';box.appendChild(e);return
+    }
+    next3.forEach(x=>{
+      const el=document.createElement('div')
+      el.className='item'
+      el.setAttribute('style','position:relative;opacity:.45;')
+      el.innerHTML=`
+        <div>${x.teamA} vs ${x.teamB}</div>
+        <div>${x.arena||''}</div>
+        <div>${fmtDate(x.datetime)} ${fmtTime(x.datetime)}</div>
+        <span class="tag">${x.prod}</span>
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">
+          <span style="font-weight:700;letter-spacing:.1em;border:1px solid currentColor;border-radius:9999px;padding:.2rem .6rem;opacity:.9;">UPCOMING</span>
+        </div>
+      `
+      box.appendChild(el)
+    })
+    return
+  }
   state.data.live.forEach(x=>{
     const el=document.createElement('div');el.className='item'
     el.innerHTML=`<div>${x.title}</div><div>${x.arena||''}</div><div>${fmtTime(x.startedAt||Date.now())}</div><a class="tag" href="${x.url}" target="_blank">Ouvrir</a>`
@@ -46,9 +68,7 @@ function renderIssues(){
 
 function renderNext90(){
   const box=document.getElementById('next90');box.innerHTML=''
-  const soon=state.data.upcoming
-    .map(x=>({...x,prod:normProd(x.production)}))
-    .filter(x=>x.prod&&withinNextMinutes(x.datetime,90))
+  const soon=state.data.upcoming.map(x=>({...x,prod:normProd(x.production)})).filter(x=>x.prod&&withinNextMinutes(x.datetime,90))
   if(!soon.length){const e=document.createElement('div');e.className='muted';e.textContent='Aucun match dans les 90 minutes.';box.appendChild(e);return}
   soon.sort((a,b)=>new Date(a.datetime)-new Date(b.datetime)).forEach(x=>{
     const el=document.createElement('div');el.className='item'
