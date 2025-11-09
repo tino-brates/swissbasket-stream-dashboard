@@ -44,8 +44,9 @@ function renderLive(){
       el.innerHTML=`
         <div>${x.teamA} vs ${x.teamB}</div>
         <div>${x.arena||''}</div>
-        <div>${fmtDate(x.datetime)} ${fmtTime(x.datetime)}</div>
+        <div class="date-mini">${fmtDate(x.datetime)} ${fmtTime(x.datetime)}</div>
         <span class="tag">${x.prod}</span>
+        <span class="tag alt">${x.competition||''}</span>
         <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">
           <span style="font-weight:700;letter-spacing:.1em;border:1px solid currentColor;border-radius:9999px;padding:.2rem .6rem;opacity:.9;">UPCOMING</span>
         </div>`;
@@ -72,11 +73,18 @@ function renderIssues(){
 
 function renderNext90(){
   const box=document.getElementById('next90');box.innerHTML='';
-  const soon=state.data.upcoming.map(x=>({...x,prod:normProd(x.production)})).filter(x=>x.prod&&withinNextMinutes(x.datetime,90));
+  const soon=state.data.upcoming
+    .map(x=>({...x,prod:normProd(x.production)}))
+    .filter(x=>x.prod&&withinNextMinutes(x.datetime,90));
   if(!soon.length){const e=document.createElement('div');e.className='muted';e.textContent='Time to rest 😴';box.appendChild(e);return}
   soon.sort((a,b)=>new Date(a.datetime)-new Date(b.datetime)).forEach(x=>{
     const el=document.createElement('div');el.className='item';
-    el.innerHTML=`<div>${fmtDate(x.datetime)} ${fmtTime(x.datetime)}</div><div>${x.teamA} vs ${x.teamB}</div><div>${x.arena}</div><div class="tag">${x.prod}</div>`;
+    el.innerHTML=`
+      <div class="date-mini">${fmtDate(x.datetime)} ${fmtTime(x.datetime)}</div>
+      <div>${x.teamA} vs ${x.teamB}</div>
+      <div>${x.arena}</div>
+      <div class="tag">${x.prod}</div>
+      <div class="tag alt">${x.competition||''}</div>`;
     box.appendChild(el);
   });
 }
@@ -129,7 +137,7 @@ function renderUpcoming(){
   tbody.innerHTML='';
   rows.sort((a,b)=>new Date(a.datetime)-new Date(b.datetime)).forEach(x=>{
     const tr=document.createElement('tr');const dt=new Date(x.datetime);
-    tr.innerHTML=`<td>${fmtDate(dt)}</td><td>${fmtTime(dt)}</td><td>${x.teamA}</td><td>${x.teamB}</td><td>${x.arena}</td><td>${x.prod}</td><td>${x.youtubeEventId?`<a target="_blank" href="https://www.youtube.com/live/${x.youtubeEventId}">${x.youtubeEventId}</a>`:''}</td>`;
+    tr.innerHTML=`<td>${fmtDate(dt)}</td><td>${fmtTime(dt)}</td><td>${x.teamA}</td><td>${x.teamB}</td><td>${x.arena}</td><td>${normProd(x.production)}</td><td>${x.competition||''}</td><td>${x.youtubeEventId?`<a target="_blank" href="https://www.youtube.com/live/${x.youtubeEventId}">${x.youtubeEventId}</a>`:''}</td>`;
     tbody.appendChild(tr);
   });
 }
