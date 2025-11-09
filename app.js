@@ -72,12 +72,32 @@ function renderLive(){
 }
 
 function renderIssues(){
-  const box=document.getElementById('issues');box.innerHTML='';
-  if(!state.data.issues.length){const e=document.createElement('div');e.className='muted';e.textContent='Aucun problème signalé.';box.appendChild(e);return}
-  state.data.issues.forEach(x=>{
-    const el=document.createElement('div');el.className='item';
-    const cls=badgeForIssue(x.statusCode||'unknown');
-    el.innerHTML=`<div>${x.arena}</div><div>${x.vendor}</div><div>${x.note||''}</div><div class="badge ${cls}">${x.status||''}</div>`;
+  const box = document.getElementById('issues');
+  box.innerHTML = '';
+
+  if (!state.data.issues.length) {
+    const e = document.createElement('div');
+    e.className = 'muted';
+    e.textContent = 'Aucun problème signalé.';
+    box.appendChild(e);
+    return;
+  }
+
+  state.data.issues.forEach(x => {
+    const el = document.createElement('div');
+    el.className = 'item';
+
+    // mappe le code statut -> classe couleur sur .tag (et pas .badge)
+    const cls = x.statusCode === 'offline'     ? 'tag-error'
+              : x.statusCode === 'insufficient'? 'tag-warn'
+              : 'tag-ok';
+
+    el.innerHTML = `
+      <div>${x.arena}</div>
+      <div>${x.vendor}</div>
+      <div>${x.note || ''}</div>
+      <span class="tag ${cls}">${x.status || ''}</span>
+    `;
     box.appendChild(el);
   });
 }
