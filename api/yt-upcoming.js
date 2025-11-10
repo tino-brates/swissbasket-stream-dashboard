@@ -1,4 +1,4 @@
-// api/yt-upcoming.js — upcoming robustes + support des événements PRIVÉS (mine=true)
+// api/yt-upcoming.js — upcoming robustes, inclut PRIVÉS via mine=true (sans broadcastStatus)
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const YT_BROADCASTS = "https://www.googleapis.com/youtube/v3/liveBroadcasts";
 const YT_SEARCH = "https://www.googleapis.com/youtube/v3/search";
@@ -44,29 +44,28 @@ async function channelIdForMine(accessToken) {
   return j?.items?.[0]?.id || null;
 }
 
-async function listUpcomingBroadcastsMine(accessToken) {
-  // Inclut public/unlisted/PRIVÉ pour le compte du token
+// NOTE: pas de broadcastStatus ici (sinon 400)
+async function listBroadcastsMineAll(accessToken) {
   const u = new URL(YT_BROADCASTS);
   u.searchParams.set("part", "id,snippet,contentDetails,status");
-  u.searchParams.set("broadcastStatus", "upcoming");
   u.searchParams.set("mine", "true");
   u.searchParams.set("maxResults", "50");
   const r = await fetch(u.toString(), { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!r.ok) return [];
   const j = await r.json();
-  return (j.items || []).map(b => ({
-    id: b.id,
-    title: b?.snippet?.title || "Upcoming",
-    scheduledStart: b?.contentDetails?.scheduledStartTime || null,
-    url: `https://www.youtube.com/watch?v=${b.id}`,
-    visibility: (b?.status?.privacyStatus || "public").toLowerCase(), // public | unlisted | private
-    isPrivate: (b?.status?.privacyStatus || "").toLowerCase() === "private",
-    source: "broadcasts.mine"
-  })).filter(x => !!x.scheduledStart);
+  return j.items || [];
+}
+
+function isUpcoming(b) {
+  const life = (b?.status?.lifeCycleStatus || "").toLowerCase(); // created | ready | testing | live | complete | revoked | ...
+  const sched = b?.contentDetails?.scheduledStartTime || b?.snippet?.scheduledStartTime || null;
+  const hasFutureStart = sched ? new Date(sched).getTime() > Date.now() : false;
+  // YouTube n’est pas toujours propre sur lifeCycleStatus, on combine avec la date future
+  return hasFutureStart || life === "created" || life === "ready";
 }
 
 async function searchUpcoming(accessToken, channelId) {
-  // search.list ne renvoie que les publics (YouTube)
+  // publics seulement
   const u = new URL(YT_SEARCH);
   u.searchParams.set("part", "snippet");
   u.searchParams.set("type", "video");
@@ -102,14 +101,27 @@ export default async function handler(req, res) {
   try {
     const access = await getAccessToken();
 
-    // 1) D’abord les upcoming du compte (inclut privés)
-    let mine = await listUpcomingBroadcastsMine(access);
+    // 1) Mine (inclut privés) — SANS broadcastStatus
+    const allMine = await listBroadcastsMineAll(access);
+    const mineUpcoming = allMine
+      .filter(isUpcoming)
+      .map(b => ({
+        id: b.id,
+        title: b?.snippet?.title || "Upcoming",
+        scheduledStart: b?.contentDetails?.scheduledStartTime || b?.snippet?.scheduledStartTime || null,
+        url: `https://www.youtube.com/watch?v=${b.id}`,
+        visibility: (b?.status?.privacyStatus || "public").toLowerCase(),
+        isPrivate: (b?.status?.privacyStatus || "").toLowerCase() === "private",
+        source: "broadcasts.mine"
+      }))
+      .filter(x => !!x.scheduledStart);
 
-    // 2) Fallback publics via search.list (ok même si token ≠ chaîne)
+    // 2) Fallback publics via search.list (+details)
     let publicItems = [];
-    if (mine.length === 0) {
-      let channelId = process.env.YT_CHANNEL_ID || await channelIdForMine(access) || null;
-      const found = await searchUpcoming(access, channelId || undefined);
+    if (mineUpcoming.length === 0) {
+      const forced = process.env.YT_CHANNEL_ID || "";
+      const chId = forced || await channelIdForMine(access);
+      const found = await searchUpcoming(access, chId || undefined);
       const details = await videosDetails(access, found.map(x => x.videoId));
       publicItems = found.map(x => {
         const d = details.get(x.videoId) || {};
@@ -126,8 +138,8 @@ export default async function handler(req, res) {
       }).filter(x => !!x.scheduledStart);
     }
 
-    // Merge & tri
-    const items = [...mine, ...publicItems].sort((a,b)=>new Date(a.scheduledStart)-new Date(b.scheduledStart));
+    const items = [...mineUpcoming, ...publicItems]
+      .sort((a,b)=>new Date(a.scheduledStart)-new Date(b.scheduledStart));
 
     res.status(200).json({ items });
   } catch (e) {
