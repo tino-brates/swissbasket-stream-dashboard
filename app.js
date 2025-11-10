@@ -19,25 +19,21 @@ const state = {
 // ---------- Helpers fuseau horaire Europe/Zurich ----------
 const CH_TZ = 'Europe/Zurich';
 
-// Parse d'une date provenant du SHEET (heure locale CH, parfois avec un 'Z' abusif).
 function parseSheetDate(input) {
   if (input instanceof Date) return input;
   if (typeof input === 'string') {
-    const s = input.replace(/Z$/, ''); // on enlève le Z pour éviter le décalage
+    const s = input.replace(/Z$/, '');
     return new Date(s);
   }
   return new Date(input);
 }
 
-// Parse d'une date UTC (YouTube / API externes standard)
 function parseUTCDate(input) {
   return input instanceof Date ? input : new Date(input);
 }
 
-// "maintenant" (pour comparaisons)
 function nowMs() { return Date.now(); }
 
-// Formatage toujours en Europe/Zurich
 function fmtDateCH(dateObj) {
   return new Intl.DateTimeFormat('fr-CH', {
     timeZone: CH_TZ, weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric'
@@ -48,14 +44,11 @@ function fmtTimeCH(dateObj) {
     timeZone: CH_TZ, hour: '2-digit', minute: '2-digit'
   }).format(dateObj);
 }
-
-// Wrappers spécifiques source (SHEET vs YT)
 function fmtDateSheet(d) { return fmtDateCH(parseSheetDate(d)); }
 function fmtTimeSheet(d) { return fmtTimeCH(parseSheetDate(d)); }
 function fmtDateUTC(d)   { return fmtDateCH(parseUTCDate(d)); }
 function fmtTimeUTC(d)   { return fmtTimeCH(parseUTCDate(d)); }
 
-// Comparaisons/filtres
 function withinNextMinutesSheet(d, min) {
   const t = parseSheetDate(d).getTime();
   const now = nowMs();
@@ -69,11 +62,10 @@ function withinNextMinutesUTC(d, min) {
 }
 function isInFutureUTC(d) { return parseUTCDate(d).getTime() >= nowMs(); }
 
-// Début/fin de semaine (lundi/dimanche) sur base SHEET (calendrier)
 function startOfWeekMonday(dt) {
   const d = parseSheetDate(dt ?? new Date());
   const base = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const day = (base.getDay() + 6) % 7; // 0=lundi
+  const day = (base.getDay() + 6) % 7;
   base.setDate(base.getDate() - day);
   base.setHours(0, 0, 0, 0);
   return base;
@@ -85,10 +77,7 @@ function endOfWeekSunday(dt) {
   e.setHours(23, 59, 59, 999);
   return e;
 }
-function endOfComingSunday(dt) {
-  // prochain dimanche par rapport à "maintenant"
-  return endOfWeekSunday(new Date());
-}
+function endOfComingSunday(dt) { return endOfWeekSunday(new Date()); }
 function endOfNextWeekSunday(dt) {
   const s = startOfWeekMonday(dt);
   const e = new Date(s);
@@ -97,8 +86,7 @@ function endOfNextWeekSunday(dt) {
   return e;
 }
 
-// Autres helpers
-function pad2(n){return n<10?`0${n}`:`${n}`}
+function pad2(n){return n<10?`0${n}`:`${n}`;}
 function elapsedHM(start){
   if(!start) return "";
   const secs=Math.max(0,Math.floor((Date.now()-parseUTCDate(start).getTime())/1000));
@@ -115,16 +103,19 @@ function normProd(s){
   if(v==='TV') return 'TV';
   return '';
 }
-function prodGroup(p){if(p==='Swish Live'||p==='Manual')return'SwishManual';return p||''}
-function badgeForStatus(s){const map={perfect:'status-perfect',good:'status-good',bad:'status-bad',nodata:'status-nodata'};return map[s]||'status-nodata'}
-function badgeForIssue(s){const map={sufficient:'tag-ok',insufficient:'tag-warn',offline:'tag-error',unknown:'tag-warn'};return map[s]||'tag-warn'}
+function prodGroup(p){if(p==='Swish Live'||p==='Manual')return'SwishManual';return p||'';}
+function badgeForStatus(s){const map={perfect:'status-perfect',good:'status-good',bad:'status-bad',nodata:'status-nodata'};return map[s]||'status-nodata';}
+function badgeForIssue(s){const map={sufficient:'tag-ok',insufficient:'tag-warn',offline:'tag-error',unknown:'tag-warn'};return map[s]||'tag-warn';}
 
 // ---------- RENDERERS ----------
+
+// ✅ Nouvelle version : Upcoming = uniquement YouTube (pas Sheet)
 function renderLive(){
-  const box=document.getElementById('liveNow');box.innerHTML='';
+  const box=document.getElementById('liveNow'); box.innerHTML='';
+
   if(state.data.live.length){
     state.data.live.forEach(x=>{
-      const el=document.createElement('div');el.className='item';
+      const el=document.createElement('div'); el.className='item';
       el.innerHTML=`
         <div style="font-weight:600;">${x.title}</div>
         <div></div>
@@ -134,20 +125,22 @@ function renderLive(){
     });
     return;
   }
-  let next3=(state.data.ytUpcoming||[])
-    .filter(x=>x.scheduledStart?isInFutureUTC(x.scheduledStart):true)
+
+  // seulement les UPCOMING YouTube (aucun fallback Sheet)
+  const next3=(state.data.ytUpcoming||[])
+    .filter(x=>x.scheduledStart && isInFutureUTC(x.scheduledStart))
     .sort((a,b)=>parseUTCDate(a.scheduledStart)-parseUTCDate(b.scheduledStart))
     .slice(0,3)
-    .map(x=>({title:x.title, when:`${fmtDateUTC(x.scheduledStart)} ${fmtTimeUTC(x.scheduledStart)}`, url:x.url, tag:'UPCOMING'}));
+    .map(x=>({title:x.title,when:`${fmtDateUTC(x.scheduledStart)} ${fmtTimeUTC(x.scheduledStart)}`,url:x.url,tag:'UPCOMING'}));
+
   if(next3.length===0){
-    next3=state.data.upcoming
-      .map(x=>({...x,prod:normProd(x.production)}))
-      .filter(x=>x.prod&&isInFutureSheet(x.datetime))
-      .sort((a,b)=>parseSheetDate(a.datetime)-parseSheetDate(b.datetime))
-      .slice(0,3)
-      .map(x=>({title:`${x.teamA} vs ${x.teamB}`, when:`${fmtDateSheet(x.datetime)} ${fmtTimeSheet(x.datetime)}`, url:'', tag:x.prod}));
+    const e=document.createElement('div');
+    e.className='muted';
+    e.textContent='Aucun live planifié sur YouTube.';
+    box.appendChild(e);
+    return;
   }
-  if(next3.length===0){return}
+
   next3.forEach(x=>{
     const el=document.createElement('div');
     el.className='item';
@@ -156,7 +149,7 @@ function renderLive(){
       <div style="font-weight:600;">${x.title}</div>
       <div></div>
       <div>${x.when}</div>
-      ${x.url?`<a class="tag" href="${x.url}" target="_blank">Ouvrir</a>`:`<span class="tag">${x.tag}</span>`}
+      <a class="tag" href="${x.url}" target="_blank">Ouvrir</a>
       <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">
         <span style="font-weight:700;letter-spacing:.1em;border:1px solid currentColor;border-radius:9999px;padding:.2rem .6rem;opacity:.9;">UPCOMING</span>
       </div>`;
@@ -165,12 +158,12 @@ function renderLive(){
 }
 
 function renderIssues(){
-  const box=document.getElementById('issues');box.innerHTML='';
+  const box=document.getElementById('issues'); box.innerHTML='';
   if(!state.data.issues.length){
-    const e=document.createElement('div');e.className='muted';e.textContent='Aucun problème signalé.';box.appendChild(e);return;
+    const e=document.createElement('div'); e.className='muted'; e.textContent='Aucun problème signalé.'; box.appendChild(e); return;
   }
   state.data.issues.forEach(x=>{
-    const el=document.createElement('div');el.className='item';
+    const el=document.createElement('div'); el.className='item';
     const cls=badgeForIssue(x.statusCode||x.status||'unknown');
     el.innerHTML=`<div>${x.arena}</div><div>${x.vendor}</div><div>${x.note||''}</div><span class="tag ${cls}">${x.status||x.statusCode||''}</span>`;
     box.appendChild(el);
@@ -178,21 +171,15 @@ function renderIssues(){
 }
 
 function renderNext90(){
-  const box=document.getElementById('next90');box.innerHTML='';
+  const box=document.getElementById('next90'); box.innerHTML='';
   const soonYT=(state.data.ytUpcoming||[]).filter(x=>x.scheduledStart&&withinNextMinutesUTC(x.scheduledStart,90));
   let soon = soonYT.sort((a,b)=>parseUTCDate(a.scheduledStart)-parseUTCDate(b.scheduledStart))
                    .map(x=>({ title:x.title, time:fmtTimeUTC(x.scheduledStart), url:x.url }));
   if(!soon.length){
-    const sheetSoon=state.data.upcoming
-      .map(x=>({...x,prod:normProd(x.production)}))
-      .filter(x=>x.prod && withinNextMinutesSheet(x.datetime,90))
-      .sort((a,b)=>parseSheetDate(a.datetime)-parseSheetDate(b.datetime))
-      .map(x=>({ title:`${x.teamA} vs ${x.teamB}`, time:fmtTimeSheet(x.datetime), url:'' }));
-    soon = sheetSoon;
+    const e=document.createElement('div'); e.className='muted'; e.textContent='Time to rest 😴'; box.appendChild(e); return;
   }
-  if(!soon.length){const e=document.createElement('div');e.className='muted';e.textContent='Time to rest 😴';box.appendChild(e);return}
   soon.forEach(x=>{
-    const el=document.createElement('div');el.className='item';
+    const el=document.createElement('div'); el.className='item';
     el.innerHTML=`
       <div style="font-weight:600;">${x.title}</div>
       <div></div>
@@ -203,9 +190,9 @@ function renderNext90(){
 }
 
 function renderHealth(){
-  const box=document.getElementById('ytHealth');box.innerHTML='';
-  if(!state.data.live.length){return}
-  if(!state.data.health.length){return}
+  const box=document.getElementById('ytHealth'); box.innerHTML='';
+  if(!state.data.live.length){return;}
+  if(!state.data.health.length){return;}
   state.data.health.forEach(x=>{
     const since=timeSince(x.lastUpdate);
     const el=document.createElement('div');
@@ -271,7 +258,7 @@ function renderUpcoming(){
   });
 }
 
-function renderAll(){renderLive();renderIssues();renderNext90();renderHealth();renderUpcoming()}
+function renderAll(){renderLive();renderIssues();renderNext90();renderHealth();renderUpcoming();}
 function setLastUpdate(){
   const el=document.getElementById('lastUpdate');
   const d=new Date();
@@ -279,7 +266,7 @@ function setLastUpdate(){
 }
 
 // ---------- Data loading ----------
-async function fetchJSON(url){const r=await fetch(url,{cache:'no-store'});if(!r.ok)throw new Error('http');return await r.json()}
+async function fetchJSON(url){const r=await fetch(url,{cache:'no-store'});if(!r.ok)throw new Error('http');return await r.json();}
 
 async function loadCalendars(){
   const upcoming=await fetchJSON('/api/upcoming');
@@ -306,11 +293,11 @@ async function loadIssues(){
 }
 
 // ---------- UI events ----------
-document.getElementById('refreshBtn').addEventListener('click',()=>{loadCalendars();loadYouTube();loadIssues()});
-document.getElementById('prodFilter').addEventListener('change',e=>{state.filterProd=e.target.value;renderUpcoming()});
-document.getElementById('searchInput').addEventListener('input',e=>{state.search=e.target.value;renderUpcoming()});
-document.getElementById('tabRange1').addEventListener('click',()=>{state.activeUpcomingTab='RANGE1';document.getElementById('tabRange1').classList.add('active');document.getElementById('tabRange2').classList.remove('active');renderUpcoming()});
-document.getElementById('tabRange2').addEventListener('click',()=>{state.activeUpcomingTab='RANGE2';document.getElementById('tabRange2').classList.add('active');document.getElementById('tabRange1').classList.remove('active');renderUpcoming()});
+document.getElementById('refreshBtn').addEventListener('click',()=>{loadCalendars();loadYouTube();loadIssues();});
+document.getElementById('prodFilter').addEventListener('change',e=>{state.filterProd=e.target.value;renderUpcoming();});
+document.getElementById('searchInput').addEventListener('input',e=>{state.search=e.target.value;renderUpcoming();});
+document.getElementById('tabRange1').addEventListener('click',()=>{state.activeUpcomingTab='RANGE1';document.getElementById('tabRange1').classList.add('active');document.getElementById('tabRange2').classList.remove('active');renderUpcoming();});
+document.getElementById('tabRange2').addEventListener('click',()=>{state.activeUpcomingTab='RANGE2';document.getElementById('tabRange2').classList.add('active');document.getElementById('tabRange1').classList.remove('active');renderUpcoming();});
 
 // ---------- Kickoff ----------
 loadCalendars();
