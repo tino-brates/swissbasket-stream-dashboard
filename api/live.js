@@ -1,18 +1,15 @@
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const YT_BROADCASTS = "https://www.googleapis.com/youtube/v3/liveBroadcasts";
-const YT_SEARCH = "https://www.googleapis.com/youtube/v3/search";
 const YT_VIDEOS = "https://www.googleapis.com/youtube/v3/videos";
-const YT_CHANNELS = "https://www.googleapis.com/youtube/v3/channels";
+const DEFAULT_CHANNEL_ID = process.env.YT_CHANNEL_ID || "UCgJw4GIqhkaIF7nYYqRI84w";
 
 let CACHE = {
   ts: 0,
-  searchLast: 0,
   data: { live: [], upcoming: [], meta: { source: "init", lastError: "" } },
   backoffUntil: 0
 };
 const CACHE_TTL_MS = 120000; // 2 min
 const BACKOFF_MS = 300000;   // 5 min
-const SEARCH_COOLDOWN_MS = 22 * 60 * 60 * 1000; // 22 h
 
 function pickCreds() {
   const P = {
@@ -35,45 +32,21 @@ async function getAccessToken() {
   });
   const r = await fetch(TOKEN_URL, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body });
   const j = await r.json();
-  if (!r.ok || !j.access_token) throw new Error("token");
+  if (!r.ok || !j.access_token) throw new Error(`token(${r.status})`);
   return j.access_token;
 }
 
-async function broadcasts(accessToken, status) {
+// ✅ une seule liste: mine=true, SANS broadcastStatus (sinon 400 incompatibleParameters)
+async function listAllBroadcasts(accessToken) {
   const u = new URL(YT_BROADCASTS);
-  u.searchParams.set("part", "snippet,contentDetails,status");
-  u.searchParams.set("broadcastStatus", status);
+  u.searchParams.set("part", "id,snippet,contentDetails,status");
   u.searchParams.set("mine", "true");
   u.searchParams.set("maxResults", "50");
-  const r = await fetch(u.toString(), { headers: { Authorization: `Bearer ${accessToken}` }});
-  if (!r.ok) throw new Error("quotaExceeded");
-  const j = await r.json();
+  const r = await fetch(u.toString(), { headers: { Authorization: `Bearer ${accessToken}` } });
+  const text = await r.text();
+  if (!r.ok) throw new Error(`liveBroadcasts(${r.status}): ${text.slice(0,200)}`);
+  const j = JSON.parse(text);
   return j.items || [];
-}
-
-async function channelIdForMine(accessToken) {
-  const u = new URL(YT_CHANNELS);
-  u.searchParams.set("part", "id");
-  u.searchParams.set("mine", "true");
-  const r = await fetch(u.toString(), { headers: { Authorization: `Bearer ${accessToken}` }});
-  const j = await r.json();
-  return j.items?.[0]?.id || null;
-}
-
-async function searchByEventType(accessToken, channelId, eventType) {
-  const u = new URL(YT_SEARCH);
-  u.searchParams.set("part", "snippet");
-  u.searchParams.set("type", "video");
-  u.searchParams.set("eventType", eventType);
-  u.searchParams.set("maxResults", "50");
-  if (channelId) u.searchParams.set("channelId", channelId);
-  const r = await fetch(u.toString(), { headers: { Authorization: `Bearer ${accessToken}` }});
-  if (!r.ok) return [];
-  const j = await r.json();
-  return (j.items || []).map(it => ({
-    videoId: it.id?.videoId,
-    title: it.snippet?.title || ""
-  })).filter(x => !!x.videoId);
 }
 
 async function videosDetails(accessToken, ids) {
@@ -94,13 +67,30 @@ async function videosDetails(accessToken, ids) {
   return map;
 }
 
-function shouldRunSearch() {
-  const now = new Date();
-  const hour = now.getHours();
-  const min = now.getMinutes();
-  const sinceLast = Date.now() - CACHE.searchLast;
-  const is3hWindow = hour === 3 && min < 10;
-  return is3hWindow || sinceLast > SEARCH_COOLDOWN_MS;
+// ---------- Fallback Atom minimal ----------
+function textBetween(s, a, b){ const i=s.indexOf(a); if(i<0) return ""; const j=s.indexOf(b,i+a.length); if(j<0) return ""; return s.slice(i+a.length,j); }
+function parseAtom(xml){
+  const parts = xml.split("<entry>").slice(1).map(seg=>"<entry>"+seg);
+  return parts.map(e=>({
+    title: textBetween(e,"<title>","</title>").trim(),
+    id: textBetween(e,"<yt:videoId>","</yt:videoId>").trim(),
+    lbc: textBetween(e,"<yt:liveBroadcastContent>","</yt:liveBroadcastContent>").trim(),
+  }));
+}
+async function atomFallback(){
+  const url = `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(DEFAULT_CHANNEL_ID)}`;
+  const r = await fetch(url, { headers:{ "user-agent":"Mozilla/5.0" } });
+  if (!r.ok) return { live:[], upcoming:[], meta:{ source:"atom", lastError:"atom http" } };
+  const xml = await r.text();
+  const entries = parseAtom(xml);
+  const nowIso = new Date().toISOString();
+  const live = entries.filter(x=>x.lbc==="live").map(x=>({
+    id:x.id, title:x.title||"Live", startedAt:nowIso, url:`https://www.youtube.com/watch?v=${x.id}`, visibility:"public", lifeCycleStatus:"live"
+  }));
+  const upcoming = entries.filter(x=>x.lbc==="upcoming").map(x=>({
+    title:x.title||"Upcoming", scheduledStart:null, url:`https://www.youtube.com/watch?v=${x.id}`, visibility:"public"
+  }));
+  return { live, upcoming, meta:{ source:"atom", lastError:"live API error" } };
 }
 
 export default async function handler(req, res) {
@@ -113,22 +103,30 @@ export default async function handler(req, res) {
 
   try {
     const access = await getAccessToken();
-    const [bActive, bUpcoming] = await Promise.all([
-      broadcasts(access, "active"),
-      broadcasts(access, "upcoming")
-    ]);
+    const items = await listAllBroadcasts(access);
 
-    // ---- LIVE ----
-    let live = bActive.map(b => ({
-      id: b.id,
-      title: b.snippet?.title || "Live",
-      startedAt: b.contentDetails?.actualStartTime || null,
-      url: `https://www.youtube.com/watch?v=${b.id}`,
-      visibility: b.status?.privacyStatus || "public",
-      lifeCycleStatus: b.status?.lifeCycleStatus || ""
-    }));
+    // partition côté code (live / upcoming)
+    let live = items
+      .filter(b => (b.status?.lifeCycleStatus||"").toLowerCase() === "live")
+      .map(b => ({
+        id: b.id,
+        title: b.snippet?.title || "Live",
+        startedAt: b.contentDetails?.actualStartTime || null,
+        url: `https://www.youtube.com/watch?v=${b.id}`,
+        visibility: b.status?.privacyStatus || "public",
+        lifeCycleStatus: "live"
+      }));
 
-    // ✅ Fallback: si startedAt manquant, aller le chercher dans videos.list
+    let upcoming = items
+      .filter(b => (b.status?.lifeCycleStatus||"").toLowerCase() === "upcoming")
+      .map(b => ({
+        title: b.snippet?.title || "Upcoming",
+        scheduledStart: b.contentDetails?.scheduledStartTime || null,
+        url: `https://www.youtube.com/watch?v=${b.id}`,
+        visibility: b.status?.privacyStatus || "public"
+      }));
+
+    // fallback startedAt via videos.list si manquant
     const missingIds = live.filter(x => !x.startedAt).map(x => x.id);
     if (missingIds.length) {
       const det = await videosDetails(access, missingIds);
@@ -139,39 +137,24 @@ export default async function handler(req, res) {
       });
     }
 
-    // ---- UPCOMING ----
-    let upcoming = bUpcoming.map(b => ({
-      title: b.snippet?.title || "Upcoming",
-      scheduledStart: b.contentDetails?.scheduledStartTime || null,
-      url: `https://www.youtube.com/watch?v=${b.id}`,
-      visibility: b.status?.privacyStatus || "public"
-    }));
-
-    // Search fallback pour upcoming si besoin (rare, quota)
-    if ((live.length === 0 || upcoming.length === 0) && shouldRunSearch()) {
-      const chId = await channelIdForMine(access);
-      const sUp = await searchByEventType(access, chId, "upcoming");
-      const dUp = await videosDetails(access, sUp.map(x => x.videoId));
-      upcoming = sUp.map(x => {
-        const d = dUp.get(x.videoId) || {};
-        return {
-          title: x.title,
-          scheduledStart: d.scheduledStart,
-          url: `https://www.youtube.com/watch?v=${x.videoId}`,
-          visibility: d.privacy || "public"
-        };
-      }).filter(x => !!x.scheduledStart);
-      CACHE.searchLast = Date.now();
-      meta.source = "search.list";
-    }
-
     CACHE.data = { live, upcoming, meta };
     CACHE.ts = now;
     return res.status(200).json(CACHE.data);
+
   } catch (e) {
+    // dernier recours: Atom (pas de quota)
     meta.lastError = String(e);
-    CACHE.data.meta = meta;
-    CACHE.backoffUntil = Date.now() + BACKOFF_MS;
-    return res.status(200).json(CACHE.data);
+    try {
+      const fb = await atomFallback();
+      CACHE.data = fb;
+      CACHE.ts = now;
+      CACHE.backoffUntil = Date.now() + BACKOFF_MS;
+      return res.status(200).json(CACHE.data);
+    } catch {
+      CACHE.data = { live: [], upcoming: [], meta: { source: "error", lastError: meta.lastError } };
+      CACHE.ts = now;
+      CACHE.backoffUntil = Date.now() + BACKOFF_MS;
+      return res.status(200).json(CACHE.data);
+    }
   }
 }
