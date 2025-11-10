@@ -1,12 +1,18 @@
-// api/live.js — récupère LIVE et UPCOMING via mine=true (sans broadcastStatus), fallback search
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const YT_BROADCASTS = "https://www.googleapis.com/youtube/v3/liveBroadcasts";
 const YT_SEARCH = "https://www.googleapis.com/youtube/v3/search";
 const YT_VIDEOS = "https://www.googleapis.com/youtube/v3/videos";
 const YT_CHANNELS = "https://www.googleapis.com/youtube/v3/channels";
 
-let CACHE = { ts: 0, data: { live: [], upcoming: [], meta: { source: "init", lastError: "" } } };
-const CACHE_TTL_MS = 120000;
+let CACHE = {
+  ts: 0,
+  searchLast: 0,
+  data: { live: [], upcoming: [], meta: { source: "init", lastError: "" } },
+  backoffUntil: 0
+};
+const CACHE_TTL_MS = 120000; // 2 min
+const BACKOFF_MS = 300000;   // 5 min
+const SEARCH_COOLDOWN_MS = 22 * 60 * 60 * 1000; // 22 h
 
 function pickCreds() {
   const P = {
@@ -33,28 +39,16 @@ async function getAccessToken() {
   return j.access_token;
 }
 
-async function listBroadcastsMineAll(accessToken) {
+async function broadcasts(accessToken, status) {
   const u = new URL(YT_BROADCASTS);
-  u.searchParams.set("part", "id,snippet,contentDetails,status");
+  u.searchParams.set("part", "snippet,contentDetails,status");
+  u.searchParams.set("broadcastStatus", status);
   u.searchParams.set("mine", "true");
   u.searchParams.set("maxResults", "50");
   const r = await fetch(u.toString(), { headers: { Authorization: `Bearer ${accessToken}` }});
-  if (!r.ok) throw new Error("liveBroadcasts");
+  if (!r.ok) throw new Error("quotaExceeded");
   const j = await r.json();
   return j.items || [];
-}
-
-function isLive(b) {
-  const life = (b?.status?.lifeCycleStatus || "").toLowerCase(); // live
-  const hasStart = !!(b?.liveStreamingDetails?.actualStartTime || b?.contentDetails?.actualStartTime);
-  return life === "live" || hasStart;
-}
-
-function isUpcoming(b) {
-  const life = (b?.status?.lifeCycleStatus || "").toLowerCase(); // created/ready
-  const sched = b?.contentDetails?.scheduledStartTime || b?.snippet?.scheduledStartTime || null;
-  const hasFutureStart = sched ? new Date(sched).getTime() > Date.now() : false;
-  return hasFutureStart || life === "created" || life === "ready";
 }
 
 async function channelIdForMine(accessToken) {
@@ -63,21 +57,22 @@ async function channelIdForMine(accessToken) {
   u.searchParams.set("mine", "true");
   const r = await fetch(u.toString(), { headers: { Authorization: `Bearer ${accessToken}` }});
   const j = await r.json();
-  return j?.items?.[0]?.id || null;
+  return j.items?.[0]?.id || null;
 }
 
-async function searchUpcoming(accessToken, channelId) {
+async function searchByEventType(accessToken, channelId, eventType) {
   const u = new URL(YT_SEARCH);
   u.searchParams.set("part", "snippet");
   u.searchParams.set("type", "video");
-  u.searchParams.set("eventType", "upcoming");
+  u.searchParams.set("eventType", eventType);
   u.searchParams.set("maxResults", "50");
   if (channelId) u.searchParams.set("channelId", channelId);
   const r = await fetch(u.toString(), { headers: { Authorization: `Bearer ${accessToken}` }});
   if (!r.ok) return [];
   const j = await r.json();
   return (j.items || []).map(it => ({
-    videoId: it.id?.videoId, title: it.snippet?.title || ""
+    videoId: it.id?.videoId,
+    title: it.snippet?.title || ""
   })).filter(x => !!x.videoId);
 }
 
@@ -91,71 +86,92 @@ async function videosDetails(accessToken, ids) {
   const map = new Map();
   (j.items || []).forEach(v => {
     map.set(v.id, {
-      actualStart: v?.liveStreamingDetails?.actualStartTime || null,
-      scheduledStart: v?.liveStreamingDetails?.scheduledStartTime || v?.snippet?.publishedAt || null,
-      visibility: (v?.status?.privacyStatus || "public").toLowerCase()
+      actualStart: v.liveStreamingDetails?.actualStartTime || null,
+      scheduledStart: v.liveStreamingDetails?.scheduledStartTime || v.snippet?.publishedAt || null,
+      privacy: v.status?.privacyStatus || null
     });
   });
   return map;
+}
+
+function shouldRunSearch() {
+  const now = new Date();
+  const hour = now.getHours();
+  const min = now.getMinutes();
+  const sinceLast = Date.now() - CACHE.searchLast;
+  const is3hWindow = hour === 3 && min < 10;
+  return is3hWindow || sinceLast > SEARCH_COOLDOWN_MS;
 }
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=300");
   const now = Date.now();
   if (now - CACHE.ts < CACHE_TTL_MS) return res.status(200).json(CACHE.data);
+  if (now < CACHE.backoffUntil) return res.status(200).json(CACHE.data);
 
-  const meta = { source: "broadcasts.mine", lastError: "" };
+  const meta = { source: "liveBroadcasts", lastError: "" };
 
   try {
     const access = await getAccessToken();
+    const [bActive, bUpcoming] = await Promise.all([
+      broadcasts(access, "active"),
+      broadcasts(access, "upcoming")
+    ]);
 
-    // Mine sans broadcastStatus (pour éviter 400) puis filtrage local
-    const all = await listBroadcastsMineAll(access);
+    // ---- LIVE ----
+    let live = bActive.map(b => ({
+      id: b.id,
+      title: b.snippet?.title || "Live",
+      startedAt: b.contentDetails?.actualStartTime || null,
+      url: `https://www.youtube.com/watch?v=${b.id}`,
+      visibility: b.status?.privacyStatus || "public",
+      lifeCycleStatus: b.status?.lifeCycleStatus || ""
+    }));
 
-    const live = all
-      .filter(isLive)
-      .map(b => ({
-        title: b?.snippet?.title || "Live",
-        startedAt: b?.liveStreamingDetails?.actualStartTime || b?.contentDetails?.actualStartTime || null,
-        url: `https://www.youtube.com/watch?v=${b.id}`,
-        visibility: (b?.status?.privacyStatus || "public").toLowerCase()
-      }));
+    // ✅ Fallback: si startedAt manquant, aller le chercher dans videos.list
+    const missingIds = live.filter(x => !x.startedAt).map(x => x.id);
+    if (missingIds.length) {
+      const det = await videosDetails(access, missingIds);
+      live = live.map(x => {
+        if (x.startedAt) return x;
+        const d = det.get(x.id) || {};
+        return { ...x, startedAt: d.actualStart || null, visibility: x.visibility || d.privacy || "public" };
+      });
+    }
 
-    let upcoming = all
-      .filter(isUpcoming)
-      .map(b => ({
-        title: b?.snippet?.title || "Upcoming",
-        scheduledStart: b?.contentDetails?.scheduledStartTime || b?.snippet?.scheduledStartTime || null,
-        url: `https://www.youtube.com/watch?v=${b.id}`,
-        visibility: (b?.status?.privacyStatus || "public").toLowerCase()
-      }))
-      .filter(x => !!x.scheduledStart);
+    // ---- UPCOMING ----
+    let upcoming = bUpcoming.map(b => ({
+      title: b.snippet?.title || "Upcoming",
+      scheduledStart: b.contentDetails?.scheduledStartTime || null,
+      url: `https://www.youtube.com/watch?v=${b.id}`,
+      visibility: b.status?.privacyStatus || "public"
+    }));
 
-    // Fallback publics (si all renvoie vide pour une raison X)
-    if (live.length === 0 && upcoming.length === 0) {
-      const forced = process.env.YT_CHANNEL_ID || "";
-      const chId = forced || await channelIdForMine(access);
-      const found = await searchUpcoming(access, chId || undefined);
-      const details = await videosDetails(access, found.map(x => x.videoId));
-      upcoming = found.map(x => {
-        const d = details.get(x.videoId) || {};
+    // Search fallback pour upcoming si besoin (rare, quota)
+    if ((live.length === 0 || upcoming.length === 0) && shouldRunSearch()) {
+      const chId = await channelIdForMine(access);
+      const sUp = await searchByEventType(access, chId, "upcoming");
+      const dUp = await videosDetails(access, sUp.map(x => x.videoId));
+      upcoming = sUp.map(x => {
+        const d = dUp.get(x.videoId) || {};
         return {
           title: x.title,
           scheduledStart: d.scheduledStart,
           url: `https://www.youtube.com/watch?v=${x.videoId}`,
-          visibility: (d.visibility || "public").toLowerCase()
+          visibility: d.privacy || "public"
         };
       }).filter(x => !!x.scheduledStart);
+      CACHE.searchLast = Date.now();
       meta.source = "search.list";
     }
 
-    const data = { live, upcoming, meta };
-    CACHE = { ts: now, data };
-    return res.status(200).json(data);
+    CACHE.data = { live, upcoming, meta };
+    CACHE.ts = now;
+    return res.status(200).json(CACHE.data);
   } catch (e) {
     meta.lastError = String(e);
-    const data = { live: [], upcoming: [], meta };
-    CACHE = { ts: now, data };
-    return res.status(200).json(data);
+    CACHE.data.meta = meta;
+    CACHE.backoffUntil = Date.now() + BACKOFF_MS;
+    return res.status(200).json(CACHE.data);
   }
 }
