@@ -1,5 +1,5 @@
 // api/health.js — RTMP ingest + health pour **LIVE uniquement**
-// (on ignore testing/preview et ready)
+// Fix: lire status.healthStatus.status (et pas status.status)
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const YT_BROADCASTS = "https://www.googleapis.com/youtube/v3/liveBroadcasts";
@@ -69,11 +69,12 @@ async function listStreams(accessToken, ids, debug=false) {
   }
 }
 
-function mapHealth(h) {
-  const v = lc((h || {}).status || "");
-  if (v === "good") return { status: "perfect", label: "Perfect" };
-  if (v === "ok")   return { status: "good",    label: "Good" };
-  if (v === "bad")  return { status: "bad",     label: "Bad" };
+// ✅ lire status.healthStatus.status
+function mapHealth(streamStatusObj) {
+  const hs = lc(streamStatusObj?.healthStatus?.status);
+  if (hs === "good") return { status: "perfect", label: "Perfect" };
+  if (hs === "ok")   return { status: "good",    label: "Good" };
+  if (hs === "bad")  return { status: "bad",     label: "Bad" };
   return { status: "nodata", label: "No data" };
 }
 
@@ -100,12 +101,11 @@ export default async function handler(req, res) {
 
     const items = lives.map(b => {
       const s = byId.get(b.boundStreamId) || {};
-      const h = mapHealth((s || {}).status || {});
+      const statusObj = (s || {}).status || {};
+      const h = mapHealth(statusObj);
       const cdn = (s || {}).cdn || {};
       const ingest = cdn.ingestionInfo || {};
-      const lastUpdate = ((s || {}).status || {}).healthStatus
-        ? (s.status.healthStatus.lastUpdateTime || null)
-        : null;
+      const lastUpdate = statusObj?.healthStatus?.lastUpdateTime || null;
 
       return {
         name: b.title,
