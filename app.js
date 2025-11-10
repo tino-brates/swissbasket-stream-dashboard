@@ -43,6 +43,12 @@ function fmtTimeCH(dateObj) {
 function fmtDateUTC(d) { return fmtDateCH(parseUTCDate(d)); }
 function fmtTimeUTC(d) { return fmtTimeCH(parseUTCDate(d)); }
 
+function withinNextMinutesSheet(d, min) {
+  const t = parseSheetDate(d).getTime();
+  const now = nowMs();
+  return t >= now && t <= now + min * 60000;
+}
+function isInFutureSheet(d) { return parseSheetDate(d).getTime() >= nowMs(); }
 function withinNextMinutesUTC(d, min) {
   const t = parseUTCDate(d).getTime();
   const now = nowMs();
@@ -96,28 +102,33 @@ function badgeForIssue(s){const map={sufficient:'tag-ok',insufficient:'tag-warn'
 
 // ---------- RENDERERS ----------
 
-// LIVE + UPCOMING (YouTube only). Ajoute "Privé" si visibility === "private".
+// LIVE + UPCOMING (YouTube only). Affiche "Privé" si visibility === "private".
+// Réagencement en flex pour éviter que le badge LIVE chevauche le lien "Ouvrir".
+// Minuteur sans texte (mm:ss ou hh:mm), mis à jour chaque seconde.
 function renderLive(){
   const box=document.getElementById('liveNow'); box.innerHTML='';
 
   if(state.data.live.length){
     state.data.live.forEach(x=>{
       const isPriv = (x.visibility||"").toLowerCase()==="private";
+      const isPreview = (x.lifeCycleStatus||"") === "testing";
+      const timer = elapsedHM(x.startedAt); // vide si pas de startedAt
+
       const el=document.createElement('div'); el.className='item';
-      el.setAttribute('style','position:relative;');
+      // ligne principale: gauche = titre + pastille + badge privé ; droite = timer + badge LIVE + lien
       el.innerHTML=`
-        <div style="font-weight:600;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;">
-          <span style="display:inline-flex;align-items:center;gap:.4rem;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;gap:.6rem;min-width:0;flex:1;">
             <span style="width:.55rem;height:.55rem;background:#e11900;border-radius:9999px;display:inline-block;box-shadow:0 0 0 2px rgba(225,25,0,.15)"></span>
-            <span>${x.title}</span>
-          </span>
-          ${isPriv?`<span class="tag" style="background:#555;border-color:#444;">Privé</span>`:""}
-        </div>
-        <div></div>
-        <div>${elapsedHM(x.startedAt)}</div>
-        <a class="tag" href="${x.url}" target="_blank">Ouvrir</a>
-        <div style="position:absolute;top:.4rem;right:.6rem;pointer-events:none;">
-          <span style="font-weight:800;letter-spacing:.08em;border:2px solid #e11900;color:#e11900;border-radius:9999px;padding:.15rem .5rem;">LIVE</span>
+            <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.title}</div>
+            ${isPriv?`<span class="tag" style="background:#555;border-color:#444;flex:0 0 auto;">Privé</span>`:""}
+          </div>
+
+          <div style="display:flex;align-items:center;gap:.6rem;flex:0 0 auto;">
+            <span class="muted" style="min-width:3.4rem;text-align:right;font-variant-numeric:tabular-nums;">${timer}</span>
+            <span style="font-weight:800;letter-spacing:.08em;border:2px solid #e11900;color:#e11900;border-radius:9999px;padding:.15rem .5rem;white-space:nowrap;flex:0 0 auto;">LIVE${isPreview?' (preview)':''}</span>
+            <a class="tag" href="${x.url}" target="_blank" style="flex:0 0 auto;">Ouvrir</a>
+          </div>
         </div>`;
       box.appendChild(el);
     });
@@ -139,13 +150,16 @@ function renderLive(){
     el.className='item';
     el.setAttribute('style','position:relative;opacity:.45;');
     el.innerHTML=`
-      <div style="font-weight:600;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;">
-        <span>${x.title}</span>
-        ${isPriv?`<span class="tag" style="background:#555;border-color:#444;">Privé</span>`:""}
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:.6rem;min-width:0;flex:1;">
+          <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.title}</div>
+          ${isPriv?`<span class="tag" style="background:#555;border-color:#444;flex:0 0 auto;">Privé</span>`:""}
+        </div>
+        <div style="display:flex;align-items:center;gap:.6rem;flex:0 0 auto;">
+          <span class="muted" style="white-space:nowrap;">${fmtDateUTC(x.scheduledStart)} ${fmtTimeUTC(x.scheduledStart)}</span>
+          <a class="tag" href="${x.url}" target="_blank" style="flex:0 0 auto;">Ouvrir</a>
+        </div>
       </div>
-      <div></div>
-      <div>${fmtDateUTC(x.scheduledStart)} ${fmtTimeUTC(x.scheduledStart)}</div>
-      <a class="tag" href="${x.url}" target="_blank">Ouvrir</a>
       <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">
         <span style="font-weight:700;letter-spacing:.1em;border:1px solid currentColor;border-radius:9999px;padding:.2rem .6rem;opacity:.9;">UPCOMING</span>
       </div>`;
@@ -257,7 +271,7 @@ function renderUpcoming(){
   });
 }
 
-function renderAll(){renderLive();renderIssues();renderNext90();renderHealth();renderUpcoming();}
+function renderAll(){renderLive();renderIssues();renderNext90();renderHealth();renderUpcoming()}
 function setLastUpdate(){
   const el=document.getElementById('lastUpdate');
   const d=new Date();
@@ -278,18 +292,14 @@ async function loadCalendars(){
 }
 
 async function loadYouTube(){
-  // 1) LIVE & meta (ton endpoint habituel)
   let payload = await fetchJSON('/api/live').catch(()=>({live:[], upcoming:[], meta:{source:'err', lastError:'fetch /api/live'}}));
   if ((!payload.live || payload.live.length===0) && (!payload.upcoming || payload.upcoming.length===0)) {
     const atom = await fetchJSON('/api/live-feed').catch(()=>({live:[],upcoming:[],source:'atom-err'}));
     payload = { live: atom.live||[], upcoming: atom.upcoming||[], meta: { source: atom.source||'atom', lastError:'' } };
   }
   state.data.live = payload.live || [];
-  // on propage visibility si elle existe déjà côté /api/live
-  state.data.live = state.data.live.map(x => ({ ...x, visibility: x.visibility || (x.status && x.status.privacyStatus) || "" }));
   state.data.ytMeta = payload.meta || { source:'', quotaBackoffUntil:0, lastError:'' };
 
-  // 2) UPCOMING YouTube (inclut privés via broadcasts+mine)
   const ytUp = await fetchJSON('/api/yt-upcoming').catch(()=>({items:[]}));
   state.data.ytUpcoming = (ytUp.items || []).map(x => ({ ...x }));
 
@@ -316,3 +326,10 @@ loadIssues();
 setInterval(loadCalendars, 10000);
 setInterval(loadYouTube, 60000);
 setInterval(loadIssues, 60000);
+
+// ⏱️ mise à jour du minuteur (chaque seconde) s'il y a des lives
+setInterval(()=>{
+  if (state.data.live && state.data.live.length){
+    renderLive();
+  }
+}, 1000);
