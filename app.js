@@ -19,17 +19,25 @@ const state = {
 // ---------- Helpers fuseau horaire Europe/Zurich ----------
 const CH_TZ = 'Europe/Zurich';
 
+// Parse d'une date provenant du SHEET (heure locale CH, parfois avec un 'Z' abusif).
 function parseSheetDate(input) {
   if (input instanceof Date) return input;
   if (typeof input === 'string') {
-    const s = input.replace(/Z$/, '');
+    const s = input.replace(/Z$/, ''); // on enlève le Z pour éviter le décalage
     return new Date(s);
   }
   return new Date(input);
 }
-function parseUTCDate(input) { return input instanceof Date ? input : new Date(input); }
+
+// Parse d'une date UTC (YouTube / API externes standard)
+function parseUTCDate(input) {
+  return input instanceof Date ? input : new Date(input);
+}
+
+// "maintenant" (pour comparaisons)
 function nowMs() { return Date.now(); }
 
+// Formatage toujours en Europe/Zurich
 function fmtDateCH(dateObj) {
   return new Intl.DateTimeFormat('fr-CH', {
     timeZone: CH_TZ, weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric'
@@ -40,9 +48,20 @@ function fmtTimeCH(dateObj) {
     timeZone: CH_TZ, hour: '2-digit', minute: '2-digit'
   }).format(dateObj);
 }
-function fmtDateUTC(d) { return fmtDateCH(parseUTCDate(d)); }
-function fmtTimeUTC(d) { return fmtTimeCH(parseUTCDate(d)); }
 
+// Wrappers spécifiques source (SHEET vs YT)
+function fmtDateSheet(d) { return fmtDateCH(parseSheetDate(d)); }
+function fmtTimeSheet(d) { return fmtTimeCH(parseSheetDate(d)); }
+function fmtDateUTC(d)   { return fmtDateCH(parseUTCDate(d)); }
+function fmtTimeUTC(d)   { return fmtTimeCH(parseUTCDate(d)); }
+
+// Comparaisons/filtres
+function withinNextMinutesSheet(d, min) {
+  const t = parseSheetDate(d).getTime();
+  const now = nowMs();
+  return t >= now && t <= now + min * 60000;
+}
+function isInFutureSheet(d) { return parseSheetDate(d).getTime() >= nowMs(); }
 function withinNextMinutesUTC(d, min) {
   const t = parseUTCDate(d).getTime();
   const now = nowMs();
@@ -50,37 +69,43 @@ function withinNextMinutesUTC(d, min) {
 }
 function isInFutureUTC(d) { return parseUTCDate(d).getTime() >= nowMs(); }
 
+// Début/fin de semaine (lundi/dimanche) sur base SHEET (calendrier)
 function startOfWeekMonday(dt) {
   const d = parseSheetDate(dt ?? new Date());
   const base = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const day = (base.getDay() + 6) % 7;
+  const day = (base.getDay() + 6) % 7; // 0=lundi
   base.setDate(base.getDate() - day);
-  base.setHours(0,0,0,0);
+  base.setHours(0, 0, 0, 0);
   return base;
 }
 function endOfWeekSunday(dt) {
   const s = startOfWeekMonday(dt);
   const e = new Date(s);
   e.setDate(e.getDate() + 6);
-  e.setHours(23,59,59,999);
+  e.setHours(23, 59, 59, 999);
   return e;
 }
-function endOfComingSunday(){ return endOfWeekSunday(new Date()); }
+function endOfComingSunday(dt) {
+  // prochain dimanche par rapport à "maintenant"
+  return endOfWeekSunday(new Date());
+}
 function endOfNextWeekSunday(dt) {
   const s = startOfWeekMonday(dt);
   const e = new Date(s);
   e.setDate(e.getDate() + 13);
-  e.setHours(23,59,59,999);
+  e.setHours(23, 59, 59, 999);
   return e;
 }
 
-function pad2(n){return n<10?`0${n}`:`${n}`;}
+// Autres helpers
+function pad2(n){return n<10?`0${n}`:`${n}`}
 function elapsedHM(start){
   if(!start) return "";
   const secs=Math.max(0,Math.floor((Date.now()-parseUTCDate(start).getTime())/1000));
   const h=Math.floor(secs/3600);const m=Math.floor((secs%3600)/60);const s=secs%60;
   return h>0?`${pad2(h)}:${pad2(m)}`:`${pad2(m)}:${pad2(s)}`;
 }
+
 function normProd(s){
   const v=(s||'').toString().trim().toUpperCase();
   if(!v) return '';
@@ -90,36 +115,46 @@ function normProd(s){
   if(v==='TV') return 'TV';
   return '';
 }
-function prodGroup(p){if(p==='Swish Live'||p==='Manual')return'SwishManual';return p||'';}
-function badgeForStatus(s){const map={perfect:'status-perfect',good:'status-good',bad:'status-bad',nodata:'status-nodata'};return map[s]||'status-nodata';}
-function badgeForIssue(s){const map={sufficient:'tag-ok',insufficient:'tag-warn',offline:'tag-error',unknown:'tag-warn'};return map[s]||'tag-warn';}
+function prodGroup(p){if(p==='Swish Live'||p==='Manual')return'SwishManual';return p||''}
+function badgeForStatus(s){const map={perfect:'status-perfect',good:'status-good',bad:'status-bad',nodata:'status-nodata'};return map[s]||'status-nodata'}
+function badgeForIssue(s){const map={sufficient:'tag-ok',insufficient:'tag-warn',offline:'tag-error',unknown:'tag-warn'};return map[s]||'tag-warn'}
 
 // ---------- RENDERERS ----------
 
-// Live + Upcoming (uniquement YouTube)
+// ✅ Live/Upcoming : affiche LIVE (badge rouge) si live; sinon UPCOMING (gris) basé uniquement sur YouTube
 function renderLive(){
-  const box=document.getElementById('liveNow'); box.innerHTML='';
+  const box=document.getElementById('liveNow');box.innerHTML='';
+
   if(state.data.live.length){
     state.data.live.forEach(x=>{
-      const el=document.createElement('div'); el.className='item';
+      const el=document.createElement('div');el.className='item';
+      el.setAttribute('style','position:relative;'); // pour le badge overlay
       el.innerHTML=`
-        <div style="font-weight:600;">${x.title}</div>
+        <div style="font-weight:600;display:flex;align-items:center;gap:.5rem;">
+          <span style="display:inline-flex;align-items:center;gap:.4rem;">
+            <span style="width:.55rem;height:.55rem;background:#e11900;border-radius:9999px;display:inline-block;box-shadow:0 0 0 2px rgba(225,25,0,.15)"></span>
+            <span>${x.title}</span>
+          </span>
+        </div>
         <div></div>
         <div>${elapsedHM(x.startedAt)}</div>
-        <a class="tag" href="${x.url}" target="_blank">Ouvrir</a>`;
+        <a class="tag" href="${x.url}" target="_blank">Ouvrir</a>
+        <div style="position:absolute;top:.4rem;right:.6rem;pointer-events:none;">
+          <span style="font-weight:800;letter-spacing:.08em;border:2px solid #e11900;color:#e11900;border-radius:9999px;padding:.15rem .5rem;">LIVE</span>
+        </div>`;
       box.appendChild(el);
     });
     return;
   }
 
   const next3=(state.data.ytUpcoming||[])
-    .filter(x=>x.scheduledStart && isInFutureUTC(x.scheduledStart))
+    .filter(x=>x.scheduledStart&&isInFutureUTC(x.scheduledStart))
     .sort((a,b)=>parseUTCDate(a.scheduledStart)-parseUTCDate(b.scheduledStart))
     .slice(0,3)
     .map(x=>({title:x.title, when:`${fmtDateUTC(x.scheduledStart)} ${fmtTimeUTC(x.scheduledStart)}`, url:x.url, tag:'UPCOMING'}));
 
   if(next3.length===0){
-    const e=document.createElement('div'); e.className='muted'; e.textContent='Aucun live planifié sur YouTube.'; box.appendChild(e); return;
+    const e=document.createElement('div');e.className='muted';e.textContent='Aucun live planifié sur YouTube.';box.appendChild(e);return
   }
 
   next3.forEach(x=>{
@@ -139,12 +174,12 @@ function renderLive(){
 }
 
 function renderIssues(){
-  const box=document.getElementById('issues'); box.innerHTML='';
+  const box=document.getElementById('issues');box.innerHTML='';
   if(!state.data.issues.length){
-    const e=document.createElement('div'); e.className='muted'; e.textContent='Aucun problème signalé.'; box.appendChild(e); return;
+    const e=document.createElement('div');e.className='muted';e.textContent='Aucun problème signalé.';box.appendChild(e);return;
   }
   state.data.issues.forEach(x=>{
-    const el=document.createElement('div'); el.className='item';
+    const el=document.createElement('div');el.className='item';
     const cls=badgeForIssue(x.statusCode||x.status||'unknown');
     el.innerHTML=`<div>${x.arena}</div><div>${x.vendor}</div><div>${x.note||''}</div><span class="tag ${cls}">${x.status||x.statusCode||''}</span>`;
     box.appendChild(el);
@@ -152,13 +187,13 @@ function renderIssues(){
 }
 
 function renderNext90(){
-  const box=document.getElementById('next90'); box.innerHTML='';
+  const box=document.getElementById('next90');box.innerHTML='';
   const soonYT=(state.data.ytUpcoming||[]).filter(x=>x.scheduledStart&&withinNextMinutesUTC(x.scheduledStart,90));
   let soon = soonYT.sort((a,b)=>parseUTCDate(a.scheduledStart)-parseUTCDate(b.scheduledStart))
                    .map(x=>({ title:x.title, time:fmtTimeUTC(x.scheduledStart), url:x.url }));
-  if(!soon.length){const e=document.createElement('div'); e.className='muted'; e.textContent='Time to rest 😴'; box.appendChild(e); return;}
+  if(!soon.length){const e=document.createElement('div');e.className='muted';e.textContent='Time to rest 😴';box.appendChild(e);return}
   soon.forEach(x=>{
-    const el=document.createElement('div'); el.className='item';
+    const el=document.createElement('div');el.className='item';
     el.innerHTML=`
       <div style="font-weight:600;">${x.title}</div>
       <div></div>
@@ -169,9 +204,9 @@ function renderNext90(){
 }
 
 function renderHealth(){
-  const box=document.getElementById('ytHealth'); box.innerHTML='';
-  if(!state.data.live.length){return;}
-  if(!state.data.health.length){return;}
+  const box=document.getElementById('ytHealth');box.innerHTML='';
+  if(!state.data.live.length){return}
+  if(!state.data.health.length){return}
   state.data.health.forEach(x=>{
     const since=timeSince(x.lastUpdate);
     const el=document.createElement('div');
@@ -237,7 +272,7 @@ function renderUpcoming(){
   });
 }
 
-function renderAll(){renderLive();renderIssues();renderNext90();renderHealth();renderUpcoming();}
+function renderAll(){renderLive();renderIssues();renderNext90();renderHealth();renderUpcoming()}
 function setLastUpdate(){
   const el=document.getElementById('lastUpdate');
   const d=new Date();
@@ -245,20 +280,18 @@ function setLastUpdate(){
 }
 
 // ---------- Data loading ----------
-async function fetchJSON(url){
-  const r=await fetch(url,{cache:'no-store'});
-  if(!r.ok) throw new Error(`http ${r.status}`);
-  return await r.json();
-}
+async function fetchJSON(url){const r=await fetch(url,{cache:'no-store'});if(!r.ok)throw new Error('http');return await r.json()}
 
+// Charge le calendrier depuis le Sheet (inchangé)
 async function loadCalendars(){
   const upcoming=await fetchJSON('/api/upcoming');
   state.data.upcoming=upcoming.items||[];
   renderUpcoming(); setLastUpdate();
 }
 
+// ✅ LIVE via /api/live (+ fallback atom), UPCOMING via /api/yt-upcoming
 async function loadYouTube(){
-  // LIVE & meta
+  // 1) LIVE & meta
   let payload = await fetchJSON('/api/live').catch(()=>({live:[], upcoming:[], meta:{source:'err', lastError:'fetch /api/live'}}));
   if ((!payload.live || payload.live.length===0) && (!payload.upcoming || payload.upcoming.length===0)) {
     const atom = await fetchJSON('/api/live-feed').catch(()=>({live:[],upcoming:[],source:'atom-err'}));
@@ -267,16 +300,13 @@ async function loadYouTube(){
   state.data.live = payload.live || [];
   state.data.ytMeta = payload.meta || { source:'', quotaBackoffUntil:0, lastError:'' };
 
-  // UPCOMING YT
+  // 2) UPCOMING YT
   const ytUp = await fetchJSON('/api/yt-upcoming').catch(()=>({items:[]}));
   state.data.ytUpcoming = ytUp.items || [];
 
-  // debug HUD
+  // petit HUD debug (optionnel)
   const dbg = document.getElementById('dbgCounts');
   if (dbg) dbg.textContent = `live:${state.data.live.length} | ytUpcoming:${state.data.ytUpcoming.length}`;
-
-  console.log('[UI] live:', state.data.live);
-  console.log('[UI] ytUpcoming:', state.data.ytUpcoming);
 
   renderLive(); renderNext90(); setLastUpdate();
 }
@@ -288,11 +318,11 @@ async function loadIssues(){
 }
 
 // ---------- UI events ----------
-document.getElementById('refreshBtn').addEventListener('click',()=>{loadCalendars();loadYouTube();loadIssues();});
-document.getElementById('prodFilter').addEventListener('change',e=>{state.filterProd=e.target.value;renderUpcoming();});
-document.getElementById('searchInput').addEventListener('input',e=>{state.search=e.target.value;renderUpcoming();});
-document.getElementById('tabRange1').addEventListener('click',()=>{state.activeUpcomingTab='RANGE1';document.getElementById('tabRange1').classList.add('active');document.getElementById('tabRange2').classList.remove('active');renderUpcoming();});
-document.getElementById('tabRange2').addEventListener('click',()=>{state.activeUpcomingTab='RANGE2';document.getElementById('tabRange2').classList.add('active');document.getElementById('tabRange1').classList.remove('active');renderUpcoming();});
+document.getElementById('refreshBtn').addEventListener('click',()=>{loadCalendars();loadYouTube();loadIssues()});
+document.getElementById('prodFilter').addEventListener('change',e=>{state.filterProd=e.target.value;renderUpcoming()});
+document.getElementById('searchInput').addEventListener('input',e=>{state.search=e.target.value;renderUpcoming()});
+document.getElementById('tabRange1').addEventListener('click',()=>{state.activeUpcomingTab='RANGE1';document.getElementById('tabRange1').classList.add('active');document.getElementById('tabRange2').classList.remove('active');renderUpcoming()});
+document.getElementById('tabRange2').addEventListener('click',()=>{state.activeUpcomingTab='RANGE2';document.getElementById('tabRange2').classList.add('active');document.getElementById('tabRange1').classList.remove('active');renderUpcoming()});
 
 // ---------- Kickoff ----------
 loadCalendars();
