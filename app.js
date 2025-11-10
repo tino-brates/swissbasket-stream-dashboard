@@ -233,7 +233,7 @@ function renderHealth(){
     const e=document.createElement('div'); e.className='muted'; e.textContent='—'; box.appendChild(e); return;
   }
   state.data.health.forEach(x=>{
-    const since=timeSince(x.lastUpdate);
+    const since = x.lastUpdate ? timeSince(x.lastUpdate) : null;
     const el=document.createElement('div');
     el.className='item';
     el.innerHTML=`
@@ -242,7 +242,7 @@ function renderHealth(){
         <div class="badge ${badgeForStatus(x.status)}">${x.statusLabel}</div>
         <div class="muted" style="flex:1;min-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.streamKey||''}</div>
         <div class="muted" style="white-space:nowrap;">${x.lastUpdate?fmtTimeUTC(x.lastUpdate):''}</div>
-        <div class="muted" style="font-size:.8em;opacity:.7;">🕒 il y a ${since}</div>
+        <div class="muted" style="font-size:.8em;opacity:.7;">${since?`🕒 il y a ${since}`:'—'}</div>
       </div>`;
     box.appendChild(el);
   });
@@ -329,7 +329,7 @@ async function loadYouTube(){
 
   renderLive(); renderNext90(); setLastUpdate();
 
-  // dès qu'on a des lives/testings, on rafraîchit l'ingest
+  // s'il y a des lives, on rafraîchit l'ingest
   if (state.data.live && state.data.live.length) {
     await loadHealth();
   }
@@ -362,7 +362,7 @@ loadHealth();
 setInterval(loadCalendars, 10000);
 setInterval(loadYouTube, 60000);
 setInterval(loadIssues, 60000);
-setInterval(loadHealth, 30000); // health refresh plus rapide
+setInterval(loadHealth, 30000);
 
 // ⏱️ mise à jour du minuteur (chaque seconde) s'il y a des lives
 setInterval(()=>{

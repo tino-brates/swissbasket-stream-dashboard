@@ -1,5 +1,5 @@
-// api/health.js — RTMP ingest + health pour LIVE & TESTING (preview), READY en fallback
-// Fix: ne pas demander "liveStreamingDetails" sur liveBroadcasts (part invalide)
+// api/health.js — RTMP ingest + health pour **LIVE uniquement**
+// (on ignore testing/preview et ready)
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const YT_BROADCASTS = "https://www.googleapis.com/youtube/v3/liveBroadcasts";
@@ -30,15 +30,11 @@ async function getAccessToken() {
     body: params
   });
   const j = await r.json();
-  if (!r.ok || !j.access_token) {
-    const msg = `token(${r.status})`;
-    throw new Error(msg);
-  }
+  if (!r.ok || !j.access_token) throw new Error(`token(${r.status})`);
   return j.access_token;
 }
 
-// IMPORTANT : mine=true SANS broadcastStatus (sinon 400)
-// FIX: part = id,snippet,contentDetails,status (PAS "liveStreamingDetails")
+// mine=true sans broadcastStatus, puis on filtre côté code
 async function listAllBroadcasts(accessToken, debug=false) {
   const u = new URL(YT_BROADCASTS);
   u.searchParams.set("part", "id,snippet,contentDetails,status");
@@ -46,33 +42,16 @@ async function listAllBroadcasts(accessToken, debug=false) {
   u.searchParams.set("maxResults", "50");
   const r = await fetch(u.toString(), { headers: { Authorization: `Bearer ${accessToken}` } });
   const text = await r.text();
-  if (!r.ok) {
-    if (debug) {
-      throw new Error(`broadcasts(${r.status}): ${text.slice(0,400)}`);
-    }
-    throw new Error("broadcasts");
-  }
+  if (!r.ok) throw new Error(debug ? `broadcasts(${r.status}): ${text.slice(0,400)}` : "broadcasts");
   try {
     const j = JSON.parse(text);
     return j.items || [];
   } catch {
-    if (debug) throw new Error(`broadcasts(json): ${text.slice(0,200)}`);
-    throw new Error("broadcasts");
+    throw new Error(debug ? `broadcasts(json): ${text.slice(0,200)}` : "broadcasts");
   }
 }
 
-function lc(s){ return (s||"").toLowerCase(); }
-
-function wantHealth(b) {
-  const life = lc(b?.status?.lifeCycleStatus);
-  // on affiche l’ingest/health pour live et testing
-  return life === "live" || life === "testing";
-}
-function maybeReady(b) {
-  const life = lc(b?.status?.lifeCycleStatus);
-  // parfois utile de montrer ready si boundStreamId déjà présent
-  return life === "ready" || life === "created";
-}
+const lc = s => (s||"").toLowerCase();
 
 async function listStreams(accessToken, ids, debug=false) {
   if (!ids.length) return [];
@@ -81,16 +60,12 @@ async function listStreams(accessToken, ids, debug=false) {
   u.searchParams.set("id", ids.join(","));
   const r = await fetch(u.toString(), { headers: { Authorization: `Bearer ${accessToken}` } });
   const text = await r.text();
-  if (!r.ok) {
-    if (debug) throw new Error(`streams(${r.status}): ${text.slice(0,400)}`);
-    throw new Error("streams");
-  }
+  if (!r.ok) throw new Error(debug ? `streams(${r.status}): ${text.slice(0,400)}` : "streams");
   try {
     const j = JSON.parse(text);
     return j.items || [];
   } catch {
-    if (debug) throw new Error(`streams(json): ${text.slice(0,200)}`);
-    throw new Error("streams");
+    throw new Error(debug ? `streams(json): ${text.slice(0,200)}` : "streams");
   }
 }
 
@@ -108,23 +83,22 @@ export default async function handler(req, res) {
     const accessToken = await getAccessToken();
     const broadcasts = await listAllBroadcasts(accessToken, debug);
 
-    // LIVE + TESTING prioritaire, READY/CREATED en fallback si stream déjà bind
-    const interesting = broadcasts
-      .filter(b => wantHealth(b) || maybeReady(b))
+    // ---- LIVE uniquement ----
+    const lives = (broadcasts || [])
+      .filter(b => lc(b?.status?.lifeCycleStatus) === "live")
       .map(b => ({
         id: b.id,
         title: b?.snippet?.title || "Live",
-        life: lc(b?.status?.lifeCycleStatus),           // live | testing | ready | created
-        privacy: lc(b?.status?.privacyStatus || "public"),
-        boundStreamId: b?.contentDetails?.boundStreamId || null
+        boundStreamId: b?.contentDetails?.boundStreamId || null,
+        privacy: lc(b?.status?.privacyStatus || "public")
       }))
       .filter(b => !!b.boundStreamId);
 
-    const streamIds = [...new Set(interesting.map(b => b.boundStreamId))];
+    const streamIds = [...new Set(lives.map(b => b.boundStreamId))];
     const streams = await listStreams(accessToken, streamIds, debug);
     const byId = new Map(streams.map(s => [s.id, s]));
 
-    const items = interesting.map(b => {
+    const items = lives.map(b => {
       const s = byId.get(b.boundStreamId) || {};
       const h = mapHealth((s || {}).status || {});
       const cdn = (s || {}).cdn || {};
@@ -134,23 +108,22 @@ export default async function handler(req, res) {
         : null;
 
       return {
-        name: b.title + (b.life === "testing" ? " (preview)" : ""),
+        name: b.title,
         status: h.status,
         statusLabel: h.label,
         lastUpdate,
         streamKey: ingest.streamName ? `${cdn.ingestionAddress || ""}/${ingest.streamName}`.trim() : "",
-        lifeCycleStatus: b.life,
+        lifeCycleStatus: "live",
         privacy: b.privacy
       };
-    })
-    .filter(x => x.streamKey || x.status !== "nodata" || x.lifeCycleStatus === "live" || x.lifeCycleStatus === "testing");
+    });
 
     const payload = { items };
     if (debug) {
       payload.debug = {
         totalBroadcasts: broadcasts.length,
-        sampled: interesting.slice(0, 5),
-        haveStreams: streams.length
+        liveCount: lives.length,
+        haveStreams: streams.length,
       };
     }
     res.status(200).json(payload);
