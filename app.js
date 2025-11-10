@@ -27,11 +27,7 @@ function parseSheetDate(input) {
   }
   return new Date(input);
 }
-
-function parseUTCDate(input) {
-  return input instanceof Date ? input : new Date(input);
-}
-
+function parseUTCDate(input) { return input instanceof Date ? input : new Date(input); }
 function nowMs() { return Date.now(); }
 
 function fmtDateCH(dateObj) {
@@ -44,17 +40,9 @@ function fmtTimeCH(dateObj) {
     timeZone: CH_TZ, hour: '2-digit', minute: '2-digit'
   }).format(dateObj);
 }
-function fmtDateSheet(d) { return fmtDateCH(parseSheetDate(d)); }
-function fmtTimeSheet(d) { return fmtTimeCH(parseSheetDate(d)); }
-function fmtDateUTC(d)   { return fmtDateCH(parseUTCDate(d)); }
-function fmtTimeUTC(d)   { return fmtTimeCH(parseUTCDate(d)); }
+function fmtDateUTC(d) { return fmtDateCH(parseUTCDate(d)); }
+function fmtTimeUTC(d) { return fmtTimeCH(parseUTCDate(d)); }
 
-function withinNextMinutesSheet(d, min) {
-  const t = parseSheetDate(d).getTime();
-  const now = nowMs();
-  return t >= now && t <= now + min * 60000;
-}
-function isInFutureSheet(d) { return parseSheetDate(d).getTime() >= nowMs(); }
 function withinNextMinutesUTC(d, min) {
   const t = parseUTCDate(d).getTime();
   const now = nowMs();
@@ -67,22 +55,22 @@ function startOfWeekMonday(dt) {
   const base = new Date(d.getFullYear(), d.getMonth(), d.getDate());
   const day = (base.getDay() + 6) % 7;
   base.setDate(base.getDate() - day);
-  base.setHours(0, 0, 0, 0);
+  base.setHours(0,0,0,0);
   return base;
 }
 function endOfWeekSunday(dt) {
   const s = startOfWeekMonday(dt);
   const e = new Date(s);
   e.setDate(e.getDate() + 6);
-  e.setHours(23, 59, 59, 999);
+  e.setHours(23,59,59,999);
   return e;
 }
-function endOfComingSunday(dt) { return endOfWeekSunday(new Date()); }
+function endOfComingSunday(){ return endOfWeekSunday(new Date()); }
 function endOfNextWeekSunday(dt) {
   const s = startOfWeekMonday(dt);
   const e = new Date(s);
   e.setDate(e.getDate() + 13);
-  e.setHours(23, 59, 59, 999);
+  e.setHours(23,59,59,999);
   return e;
 }
 
@@ -93,7 +81,6 @@ function elapsedHM(start){
   const h=Math.floor(secs/3600);const m=Math.floor((secs%3600)/60);const s=secs%60;
   return h>0?`${pad2(h)}:${pad2(m)}`:`${pad2(m)}:${pad2(s)}`;
 }
-
 function normProd(s){
   const v=(s||'').toString().trim().toUpperCase();
   if(!v) return '';
@@ -109,10 +96,9 @@ function badgeForIssue(s){const map={sufficient:'tag-ok',insufficient:'tag-warn'
 
 // ---------- RENDERERS ----------
 
-// ✅ Nouvelle version : Upcoming = uniquement YouTube (pas Sheet)
+// Live + Upcoming (uniquement YouTube)
 function renderLive(){
   const box=document.getElementById('liveNow'); box.innerHTML='';
-
   if(state.data.live.length){
     state.data.live.forEach(x=>{
       const el=document.createElement('div'); el.className='item';
@@ -126,19 +112,14 @@ function renderLive(){
     return;
   }
 
-  // seulement les UPCOMING YouTube (aucun fallback Sheet)
   const next3=(state.data.ytUpcoming||[])
     .filter(x=>x.scheduledStart && isInFutureUTC(x.scheduledStart))
     .sort((a,b)=>parseUTCDate(a.scheduledStart)-parseUTCDate(b.scheduledStart))
     .slice(0,3)
-    .map(x=>({title:x.title,when:`${fmtDateUTC(x.scheduledStart)} ${fmtTimeUTC(x.scheduledStart)}`,url:x.url,tag:'UPCOMING'}));
+    .map(x=>({title:x.title, when:`${fmtDateUTC(x.scheduledStart)} ${fmtTimeUTC(x.scheduledStart)}`, url:x.url, tag:'UPCOMING'}));
 
   if(next3.length===0){
-    const e=document.createElement('div');
-    e.className='muted';
-    e.textContent='Aucun live planifié sur YouTube.';
-    box.appendChild(e);
-    return;
+    const e=document.createElement('div'); e.className='muted'; e.textContent='Aucun live planifié sur YouTube.'; box.appendChild(e); return;
   }
 
   next3.forEach(x=>{
@@ -175,9 +156,7 @@ function renderNext90(){
   const soonYT=(state.data.ytUpcoming||[]).filter(x=>x.scheduledStart&&withinNextMinutesUTC(x.scheduledStart,90));
   let soon = soonYT.sort((a,b)=>parseUTCDate(a.scheduledStart)-parseUTCDate(b.scheduledStart))
                    .map(x=>({ title:x.title, time:fmtTimeUTC(x.scheduledStart), url:x.url }));
-  if(!soon.length){
-    const e=document.createElement('div'); e.className='muted'; e.textContent='Time to rest 😴'; box.appendChild(e); return;
-  }
+  if(!soon.length){const e=document.createElement('div'); e.className='muted'; e.textContent='Time to rest 😴'; box.appendChild(e); return;}
   soon.forEach(x=>{
     const el=document.createElement('div'); el.className='item';
     el.innerHTML=`
@@ -266,7 +245,11 @@ function setLastUpdate(){
 }
 
 // ---------- Data loading ----------
-async function fetchJSON(url){const r=await fetch(url,{cache:'no-store'});if(!r.ok)throw new Error('http');return await r.json();}
+async function fetchJSON(url){
+  const r=await fetch(url,{cache:'no-store'});
+  if(!r.ok) throw new Error(`http ${r.status}`);
+  return await r.json();
+}
 
 async function loadCalendars(){
   const upcoming=await fetchJSON('/api/upcoming');
@@ -275,19 +258,31 @@ async function loadCalendars(){
 }
 
 async function loadYouTube(){
-  let payload = await fetchJSON('/api/live');
+  // LIVE & meta
+  let payload = await fetchJSON('/api/live').catch(()=>({live:[], upcoming:[], meta:{source:'err', lastError:'fetch /api/live'}}));
   if ((!payload.live || payload.live.length===0) && (!payload.upcoming || payload.upcoming.length===0)) {
-    const atom = await fetchJSON('/api/live-feed');
+    const atom = await fetchJSON('/api/live-feed').catch(()=>({live:[],upcoming:[],source:'atom-err'}));
     payload = { live: atom.live||[], upcoming: atom.upcoming||[], meta: { source: atom.source||'atom', lastError:'' } };
   }
   state.data.live = payload.live || [];
-  state.data.ytUpcoming = payload.upcoming || [];
   state.data.ytMeta = payload.meta || { source:'', quotaBackoffUntil:0, lastError:'' };
+
+  // UPCOMING YT
+  const ytUp = await fetchJSON('/api/yt-upcoming').catch(()=>({items:[]}));
+  state.data.ytUpcoming = ytUp.items || [];
+
+  // debug HUD
+  const dbg = document.getElementById('dbgCounts');
+  if (dbg) dbg.textContent = `live:${state.data.live.length} | ytUpcoming:${state.data.ytUpcoming.length}`;
+
+  console.log('[UI] live:', state.data.live);
+  console.log('[UI] ytUpcoming:', state.data.ytUpcoming);
+
   renderLive(); renderNext90(); setLastUpdate();
 }
 
 async function loadIssues(){
-  const issues = await fetchJSON('/api/issues');
+  const issues = await fetchJSON('/api/issues').catch(()=>({items:[]}));
   state.data.issues = issues.items || [];
   renderIssues();
 }
