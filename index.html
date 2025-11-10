@@ -3,81 +3,76 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>SwissBasket Streaming</title>
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-  <meta http-equiv="Pragma" content="no-cache" />
-  <meta http-equiv="Expires" content="0" />
+  <title data-i18n="title">SwissBasket Streaming</title>
   <link rel="stylesheet" href="styles.css" />
-  <style>
-    /* petit badge debug (tu peux supprimer après) */
-    .dbg{font-size:.75rem;opacity:.7;margin-left:.5rem}
-  </style>
 </head>
 <body>
   <div class="wrap">
     <header class="header">
-      <h1>SwissBasket Streaming
-        <span id="dbgCounts" class="dbg"></span>
-      </h1>
+      <h1 data-i18n="app_header">SwissBasket Streaming</h1>
       <div class="header-actions">
-        <button id="refreshBtn">Refresh</button>
+        <button id="refreshBtn" data-i18n="refresh">Rafraîchir</button>
         <span class="lastupdate"><span id="lastUpdate">--:--:--</span></span>
+        <div class="lang-switch">
+          <button id="langFr" class="lang-btn" data-lang="fr">FR</button>
+          <button id="langEn" class="lang-btn" data-lang="en">EN</button>
+        </div>
       </div>
     </header>
 
     <section class="panel">
-      <h2 class="title">Live maintenant sur YouTube</h2>
+      <h2 class="title" data-i18n="live_now">Live maintenant sur YouTube</h2>
       <div id="liveNow" class="list"></div>
     </section>
 
     <div class="grid">
       <section class="panel">
-        <h2 class="title">Arènes en problème Keemotion / Synergy</h2>
+        <h2 class="title" data-i18n="km_issues">Arènes en problème Keemotion / Synergy</h2>
         <div id="issues" class="list"></div>
       </section>
 
       <section class="panel">
-        <h2 class="title">Statut d’ingestion YouTube</h2>
+        <h2 class="title" data-i18n="yt_health">Statut d’ingestion YouTube</h2>
         <div id="ytHealth" class="list"></div>
       </section>
     </div>
 
     <section class="panel">
-      <h2 class="title">À venir (90 min)</h2>
+      <h2 class="title" data-i18n="upcoming_90">À venir (90 min)</h2>
       <div id="next90" class="list"></div>
     </section>
 
     <section class="panel">
       <div class="upcoming-head">
-        <h2 class="title">Upcoming Streams</h2>
+        <h2 class="title" data-i18n="upcoming_streams">Upcoming Streams</h2>
         <div class="tabs">
-          <button id="tabRange1" class="tab active">Jusqu’au prochain dimanche</button>
-          <button id="tabRange2" class="tab">Semaine actuelle + suivante</button>
+          <button id="tabRange1" class="tab active" data-i18n="tab_to_sunday">Jusqu’au prochain dimanche</button>
+          <button id="tabRange2" class="tab" data-i18n="tab_this_next">Semaine actuelle + suivante</button>
         </div>
       </div>
 
       <div class="filters">
         <select id="prodFilter">
-          <option value="ALL">Tous (streamés)</option>
+          <option value="ALL" data-i18n="filter_all">Tous (streamés)</option>
           <option value="Keemotion">Keemotion</option>
-          <option value="SwishManual">Swish Live + Manual</option>
+          <option value="SwishManual" data-i18n="filter_swish_manual">Swish Live + Manual</option>
           <option value="TV">TV</option>
         </select>
-        <input id="searchInput" type="search" placeholder="Rechercher équipe, arène, prod, ligue" />
+        <input id="searchInput" type="search" data-i18n-ph="search_ph" placeholder="Rechercher équipe, arène, prod, ligue" />
       </div>
 
       <div class="table-wrap">
         <table class="table">
           <thead>
             <tr>
-              <th>Date</th>
-              <th>Heure</th>
-              <th>Ligue</th>
-              <th>Équipe A</th>
-              <th>Équipe B</th>
-              <th>Arène</th>
-              <th>Production</th>
-              <th>YT Event</th>
+              <th data-i18n="th_date">Date</th>
+              <th data-i18n="th_time">Heure</th>
+              <th data-i18n="th_league">Ligue</th>
+              <th data-i18n="th_team_a">Équipe A</th>
+              <th data-i18n="th_team_b">Équipe B</th>
+              <th data-i18n="th_arena">Arène</th>
+              <th data-i18n="th_prod">Production</th>
+              <th data-i18n="th_yt_event">YT Event</th>
             </tr>
           </thead>
           <tbody id="upcomingBody"></tbody>
@@ -86,7 +81,6 @@
     </section>
   </div>
 
-  <!-- cache-busting pour forcer le nouveau JS -->
-  <script src="app.js?v=yt3"></script>
+  <script src="app.js"></script>
 </body>
 </html>

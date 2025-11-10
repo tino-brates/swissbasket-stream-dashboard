@@ -1,7 +1,90 @@
 // ------------------------------------------------------
-// Dashboard SwissBasket — gestion stricte des heures CH
+// Dashboard SwissBasket — FR/EN toggle + fuseau CH
 // ------------------------------------------------------
 
+/* ---------------- I18N ---------------- */
+const I18N = {
+  fr: {
+    title: "SwissBasket Streaming",
+    app_header: "SwissBasket Streaming",
+    refresh: "Rafraîchir",
+    live_now: "Live maintenant sur YouTube",
+    km_issues: "Arènes en problème Keemotion / Synergy",
+    yt_health: "Statut d’ingestion YouTube",
+    upcoming_90: "À venir (90 min)",
+    upcoming_streams: "Upcoming Streams",
+    tab_to_sunday: "Jusqu’au prochain dimanche",
+    tab_this_next: "Semaine actuelle + suivante",
+    filter_all: "Tous (streamés)",
+    filter_swish_manual: "Swish Live + Manual",
+    search_ph: "Rechercher équipe, arène, prod, ligue",
+    th_date: "Date", th_time: "Heure", th_league:"Ligue",
+    th_team_a:"Équipe A", th_team_b:"Équipe B",
+    th_arena:"Arène", th_prod:"Production", th_yt_event:"YT Event",
+    open: "Ouvrir",
+    private: "Privé",
+    upcoming_tag: "UPCOMING",
+    no_arena_issue: "Aucun problème signalé.",
+    rest: "Time to rest 😴",
+    nodata: "No data",
+    ago_prefix: "il y a",
+  },
+  en: {
+    title: "SwissBasket Streaming",
+    app_header: "SwissBasket Streaming",
+    refresh: "Refresh",
+    live_now: "Live on YouTube now",
+    km_issues: "Arenas in issue (Keemotion / Synergy)",
+    yt_health: "YouTube ingestion status",
+    upcoming_90: "Coming up (90 min)",
+    upcoming_streams: "Upcoming Streams",
+    tab_to_sunday: "Until next Sunday",
+    tab_this_next: "This week + next",
+    filter_all: "All (streamed)",
+    filter_swish_manual: "Swish Live + Manual",
+    search_ph: "Search team, arena, prod, league",
+    th_date: "Date", th_time: "Time", th_league:"League",
+    th_team_a:"Team A", th_team_b:"Team B",
+    th_arena:"Arena", th_prod:"Production", th_yt_event:"YT Event",
+    open: "Open",
+    private: "Private",
+    upcoming_tag: "UPCOMING",
+    no_arena_issue: "No issues reported.",
+    rest: "Time to rest 😴",
+    nodata: "No data",
+    ago_prefix: "ago",
+  }
+};
+
+let LANG = (localStorage.getItem("LANG") || "fr");
+function t(key){ return (I18N[LANG] && I18N[LANG][key]) || I18N.fr[key] || key; }
+
+function applyI18n(){
+  document.documentElement.lang = LANG;
+  // data-i18n → innerText
+  document.querySelectorAll("[data-i18n]").forEach(el=>{
+    const k = el.getAttribute("data-i18n");
+    el.textContent = t(k);
+  });
+  // placeholders
+  document.querySelectorAll("[data-i18n-ph]").forEach(el=>{
+    const k = el.getAttribute("data-i18n-ph");
+    el.setAttribute("placeholder", t(k));
+  });
+  // bouton actif
+  document.querySelectorAll(".lang-btn").forEach(b=>{
+    b.classList.toggle("active", b.dataset.lang===LANG);
+  });
+}
+
+// écouteurs langue
+window.addEventListener("DOMContentLoaded", ()=>{
+  document.getElementById("langFr").addEventListener("click",()=>{ LANG="fr"; localStorage.setItem("LANG","fr"); applyI18n(); renderAll(); });
+  document.getElementById("langEn").addEventListener("click",()=>{ LANG="en"; localStorage.setItem("LANG","en"); applyI18n(); renderAll(); });
+  applyI18n();
+});
+
+/* -------------- ÉTAT GLOBAL -------------- */
 const state = {
   filterProd: 'ALL',
   search: '',
@@ -19,43 +102,32 @@ const state = {
 // ---------- Helpers fuseau horaire Europe/Zurich ----------
 const CH_TZ = 'Europe/Zurich';
 
-// Parse d'une date provenant du SHEET (heure locale CH, parfois avec un 'Z' abusif).
 function parseSheetDate(input) {
   if (input instanceof Date) return input;
   if (typeof input === 'string') {
-    const s = input.replace(/Z$/, ''); // on enlève le Z pour éviter le décalage
+    const s = input.replace(/Z$/, '');
     return new Date(s);
   }
   return new Date(input);
 }
-
-// Parse d'une date UTC (YouTube / API externes standard)
-function parseUTCDate(input) {
-  return input instanceof Date ? input : new Date(input);
-}
-
-// "maintenant" (pour comparaisons)
+function parseUTCDate(input) { return input instanceof Date ? input : new Date(input); }
 function nowMs() { return Date.now(); }
 
-// Formatage toujours en Europe/Zurich
 function fmtDateCH(dateObj) {
-  return new Intl.DateTimeFormat('fr-CH', {
+  return new Intl.DateTimeFormat(LANG==='fr'?'fr-CH':'en-GB', {
     timeZone: CH_TZ, weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric'
   }).format(dateObj);
 }
 function fmtTimeCH(dateObj) {
-  return new Intl.DateTimeFormat('fr-CH', {
+  return new Intl.DateTimeFormat(LANG==='fr'?'fr-CH':'en-GB', {
     timeZone: CH_TZ, hour: '2-digit', minute: '2-digit'
   }).format(dateObj);
 }
-
-// Wrappers spécifiques source (SHEET vs YT)
 function fmtDateSheet(d) { return fmtDateCH(parseSheetDate(d)); }
 function fmtTimeSheet(d) { return fmtTimeCH(parseSheetDate(d)); }
 function fmtDateUTC(d)   { return fmtDateCH(parseUTCDate(d)); }
 function fmtTimeUTC(d)   { return fmtTimeCH(parseUTCDate(d)); }
 
-// Comparaisons/filtres
 function withinNextMinutesSheet(d, min) {
   const t = parseSheetDate(d).getTime();
   const now = nowMs();
@@ -69,7 +141,7 @@ function withinNextMinutesUTC(d, min) {
 }
 function isInFutureUTC(d) { return parseUTCDate(d).getTime() >= nowMs(); }
 
-// Début/fin de semaine (lundi/dimanche) sur base SHEET (calendrier)
+// Semaine
 function startOfWeekMonday(dt) {
   const d = parseSheetDate(dt ?? new Date());
   const base = new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -85,7 +157,7 @@ function endOfWeekSunday(dt) {
   e.setHours(23, 59, 59, 999);
   return e;
 }
-function endOfComingSunday(dt) { return endOfWeekSunday(new Date()); }
+function endOfComingSunday(){ return endOfWeekSunday(new Date()); }
 function endOfNextWeekSunday(dt) {
   const s = startOfWeekMonday(dt);
   const e = new Date(s);
@@ -94,7 +166,7 @@ function endOfNextWeekSunday(dt) {
   return e;
 }
 
-// Autres helpers
+// Mini helpers
 function pad2(n){return n<10?`0${n}`:`${n}`}
 function elapsedHM(start){
   if(!start) return "";
@@ -116,7 +188,7 @@ function prodGroup(p){if(p==='Swish Live'||p==='Manual')return'SwishManual';retu
 function badgeForStatus(s){const map={perfect:'status-perfect',good:'status-good',bad:'status-bad',nodata:'status-nodata'};return map[s]||'status-nodata'}
 function badgeForIssue(s){const map={sufficient:'tag-ok',insufficient:'tag-warn',offline:'tag-error',unknown:'tag-warn'};return map[s]||'tag-warn'}
 
-// ---------- RENDERERS ----------
+/* ---------------- RENDERERS ---------------- */
 function renderLive(){
   const box=document.getElementById('liveNow');box.innerHTML='';
 
@@ -124,79 +196,51 @@ function renderLive(){
     state.data.live.forEach(x=>{
       const isPriv = (x.visibility||"").toLowerCase()==="private";
       const isPreview = (x.lifeCycleStatus||"") === "testing";
-      const timer = elapsedHM(x.startedAt); // mm:ss ou hh:mm
+      const timer = elapsedHM(x.startedAt);
 
-      // ⚠️ On remplit les 4 colonnes de .item dans l’ordre :
-      // [0] gauche: pastille + titre + timer (+ privé)
-      // [1] milieu: badge LIVE
-      // [2] vide (réservé / future info)
-      // [3] droite: lien Ouvrir
       const el=document.createElement('div');el.className='item';
       el.innerHTML=`
-        <!-- Col 1 (gauche) -->
-        <div style="display:flex;align-items:center;gap:.6rem;min-width:0;">
-          <span class="dot-live"></span>
-          <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.title}</div>
-          <span class="muted" style="font-variant-numeric:tabular-nums;">${timer}</span>
-          ${isPriv?`<span class="tag" style="background:#555;border-color:#444;">Privé</span>`:""}
-        </div>
-
-        <!-- Col 2 (milieu) -->
-        <div style="text-align:center;">
-          <span class="live-pill">LIVE${isPreview?' (preview)':''}</span>
-        </div>
-
-        <!-- Col 3 (vide pour l’instant) -->
-        <div></div>
-
-        <!-- Col 4 (droite) -->
-        <a class="tag" href="${x.url}" target="_blank" style="justify-self:end;">Ouvrir</a>
-      `;
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;gap:.6rem;min-width:0;flex:1;">
+            <span class="dot-live"></span>
+            <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.title}</div>
+            <span class="muted" style="font-variant-numeric:tabular-nums;">${timer}</span>
+            ${isPriv?`<span class="tag" style="background:#555;border-color:#444;">${t('private')}</span>`:""}
+          </div>
+          <div style="display:flex;align-items:center;gap:.6rem;flex:0 0 auto;">
+            <span class="live-pill">LIVE${isPreview?' (preview)':''}</span>
+            <a class="tag" href="${x.url}" target="_blank" style="flex:0 0 auto;">${t('open')}</a>
+          </div>
+        </div>`;
       box.appendChild(el);
     });
     return;
   }
 
-  // UPCOMING fallback (grisé)
   let next3=(state.data.ytUpcoming||[])
     .filter(x=>x.scheduledStart?isInFutureUTC(x.scheduledStart):true)
     .sort((a,b)=>parseUTCDate(a.scheduledStart)-parseUTCDate(b.scheduledStart))
     .slice(0,3)
-    .map(x=>({title:x.title, when:`${fmtDateUTC(x.scheduledStart)} ${fmtTimeUTC(x.scheduledStart)}`, url:x.url, tag:'UPCOMING', visibility:x.visibility||''}));
+    .map(x=>({title:x.title, when:`${fmtDateUTC(x.scheduledStart)} ${fmtTimeUTC(x.scheduledStart)}`, url:x.url, tag:t('upcoming_tag'), visibility:x.visibility||''}));
 
-  if(next3.length===0){
-    next3=state.data.upcoming
-      .map(x=>({...x,prod:normProd(x.production)}))
-      .filter(x=>x.prod&&isInFutureSheet(x.datetime))
-      .sort((a,b)=>parseSheetDate(a.datetime)-parseSheetDate(b.datetime))
-      .slice(0,3)
-      .map(x=>({title:`${x.teamA} vs ${x.teamB}`, when:`${fmtDateSheet(x.datetime)} ${fmtTimeSheet(x.datetime)}`, url:'', tag:x.prod}));
-  }
   if(next3.length===0){return}
   next3.forEach(x=>{
     const el=document.createElement('div');
     el.className='item';
     el.setAttribute('style','position:relative;opacity:.45;');
     el.innerHTML=`
-      <!-- Col 1 (gauche) -->
-      <div style="display:flex;align-items:center;gap:.6rem;min-width:0;">
-        <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.title}</div>
-        ${x.visibility && x.visibility.toLowerCase()==='private' ? `<span class="tag" style="background:#555;border-color:#444;">Privé</span>` : ``}
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:.6rem;min-width:0;flex:1;">
+          <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.title}</div>
+          ${x.visibility && x.visibility.toLowerCase()==='private' ? `<span class="tag" style="background:#555;border-color:#444;">${t('private')}</span>` : ``}
+        </div>
+        <div style="display:flex;align-items:center;gap:.6rem;flex:0 0 auto;">
+          <span class="muted" style="white-space:nowrap;">${x.when}</span>
+          ${x.url?`<a class="tag" href="${x.url}" target="_blank">${t('open')}</a>`:`<span class="tag">${x.tag}</span>`}
+        </div>
       </div>
-
-      <!-- Col 2 (milieu) -->
-      <div style="text-align:center;">
-        <span class="tag">UPCOMING</span>
-      </div>
-
-      <!-- Col 3 (infos heure) -->
-      <div class="muted" style="white-space:nowrap;">${x.when}</div>
-
-      <!-- Col 4 (droite) -->
-      ${x.url?`<a class="tag" href="${x.url}" target="_blank" style="justify-self:end;">Ouvrir</a>`:`<span></span>`}
-
       <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">
-        <span style="font-weight:700;letter-spacing:.1em;border:1px solid currentColor;border-radius:9999px;padding:.2rem .6rem;opacity:.9;">UPCOMING</span>
+        <span style="font-weight:700;letter-spacing:.1em;border:1px solid currentColor;border-radius:9999px;padding:.2rem .6rem;opacity:.9;">${t('upcoming_tag')}</span>
       </div>`;
     box.appendChild(el);
   });
@@ -205,7 +249,7 @@ function renderLive(){
 function renderIssues(){
   const box=document.getElementById('issues');box.innerHTML='';
   if(!state.data.issues.length){
-    const e=document.createElement('div');e.className='muted';e.textContent='Aucun problème signalé.';box.appendChild(e);return;
+    const e=document.createElement('div');e.className='muted';e.textContent=t('no_arena_issue');box.appendChild(e);return;
   }
   state.data.issues.forEach(x=>{
     const el=document.createElement('div');el.className='item';
@@ -221,7 +265,7 @@ function renderNext90(){
   let soon = soonYT.sort((a,b)=>parseUTCDate(a.scheduledStart)-parseUTCDate(b.scheduledStart))
                    .map(x=>{
                      const isPriv=(x.visibility||"").toLowerCase()==="private";
-                     return { title:x.title + (isPriv?' (Privé)':''), time:fmtTimeUTC(x.scheduledStart), url:x.url };
+                     return { title:x.title + (isPriv?` (${t('private')})`:''), time:fmtTimeUTC(x.scheduledStart), url:x.url };
                    });
   if(!soon.length){
     const sheetSoon=state.data.upcoming
@@ -231,14 +275,14 @@ function renderNext90(){
       .map(x=>({ title:`${x.teamA} vs ${x.teamB}`, time:fmtTimeSheet(x.datetime), url:'' }));
     soon = sheetSoon;
   }
-  if(!soon.length){const e=document.createElement('div');e.className='muted';e.textContent='Time to rest 😴';box.appendChild(e);return}
+  if(!soon.length){const e=document.createElement('div');e.className='muted';e.textContent=t('rest');box.appendChild(e);return}
   soon.forEach(x=>{
     const el=document.createElement('div');el.className='item';
     el.innerHTML=`
       <div style="font-weight:600;">${x.title}</div>
       <div></div>
       <div>${x.time}</div>
-      ${x.url?`<a class="tag" href="${x.url}" target="_blank" style="justify-self:end;">Ouvrir</a>`:''}`;
+      ${x.url?`<a class="tag" href="${x.url}" target="_blank">${t('open')}</a>`:''}`;
     box.appendChild(el);
   });
 }
@@ -256,15 +300,19 @@ function renderHealth(){
     el.innerHTML=`
       <div style="display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;width:100%;">
         <div style="flex:1;min-width:140px;">${x.name}</div>
-        <div class="badge ${badgeForStatus(x.status)}">${x.statusLabel}</div>
+        <div class="badge ${badgeForStatus(x.status)}">${statusLabel(x.status)}</div>
         <div class="muted" style="flex:1;min-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.streamKey||''}</div>
         <div class="muted" style="white-space:nowrap;">${x.lastUpdate?fmtTimeUTC(x.lastUpdate):''}</div>
-        <div class="muted" style="font-size:.8em;opacity:.7;">${since?`🕒 il y a ${since}`:'—'}</div>
+        <div class="muted" style="font-size:.8em;opacity:.7;">${since?`🕒 ${t('ago_prefix')} ${since}`:'—'}</div>
       </div>`;
     box.appendChild(el);
   });
 }
-
+function statusLabel(s){
+  const map={perfect:{fr:'Parfait',en:'Perfect'},good:{fr:'Bon',en:'Good'},bad:{fr:'Mauvais',en:'Bad'},nodata:{fr:t('nodata'),en:t('nodata')}};
+  const k=(s||'').toLowerCase();
+  return (map[k] && map[k][LANG]) || t('nodata');
+}
 function timeSince(date){
   const s=Math.floor((Date.now()-parseUTCDate(date))/1000);
   if(s<60)return `${s}s`;
@@ -318,10 +366,10 @@ function renderAll(){renderLive();renderIssues();renderNext90();renderHealth();r
 function setLastUpdate(){
   const el=document.getElementById('lastUpdate');
   const d=new Date();
-  el.textContent=new Intl.DateTimeFormat('fr-CH',{timeZone:CH_TZ,hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(d);
+  el.textContent=new Intl.DateTimeFormat(LANG==='fr'?'fr-CH':'en-GB',{timeZone:CH_TZ,hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(d);
 }
 
-// ---------- Data loading ----------
+/* ---------------- DATA LOADING ---------------- */
 async function fetchJSON(url){const r=await fetch(url,{cache:'no-store'});if(!r.ok)throw new Error('http');return await r.json()}
 
 async function loadCalendars(){
@@ -331,7 +379,6 @@ async function loadCalendars(){
 }
 
 async function loadYouTube(){
-  // live + meta
   let payload = await fetchJSON('/api/live').catch(()=>({live:[], upcoming:[], meta:{source:'err', lastError:'fetch /api/live'}}));
   if ((!payload.live || payload.live.length===0) && (!payload.upcoming || payload.upcoming.length===0)) {
     const atom = await fetchJSON('/api/live-feed').catch(()=>({live:[],upcoming:[],source:'atom-err'}));
@@ -340,16 +387,11 @@ async function loadYouTube(){
   state.data.live = payload.live || [];
   state.data.ytMeta = payload.meta || { source:'', quotaBackoffUntil:0, lastError:'' };
 
-  // upcoming côté YouTube (inclut privés)
   const ytUp = await fetchJSON('/api/yt-upcoming').catch(()=>({items:[]}));
   state.data.ytUpcoming = (ytUp.items || []).map(x => ({ ...x }));
 
   renderLive(); renderNext90(); setLastUpdate();
-
-  // s'il y a des lives, on rafraîchit l'ingest
-  if (state.data.live && state.data.live.length) {
-    await loadHealth();
-  }
+  if (state.data.live && state.data.live.length) await loadHealth();
 }
 
 async function loadHealth(){
@@ -364,14 +406,14 @@ async function loadIssues(){
   renderIssues();
 }
 
-// ---------- UI events ----------
+/* ---------------- UI ---------------- */
 document.getElementById('refreshBtn').addEventListener('click',()=>{loadCalendars();loadYouTube();loadIssues();loadHealth();});
 document.getElementById('prodFilter').addEventListener('change',e=>{state.filterProd=e.target.value;renderUpcoming()});
 document.getElementById('searchInput').addEventListener('input',e=>{state.search=e.target.value;renderUpcoming()});
 document.getElementById('tabRange1').addEventListener('click',()=>{state.activeUpcomingTab='RANGE1';document.getElementById('tabRange1').classList.add('active');document.getElementById('tabRange2').classList.remove('active');renderUpcoming()});
 document.getElementById('tabRange2').addEventListener('click',()=>{state.activeUpcomingTab='RANGE2';document.getElementById('tabRange2').classList.add('active');document.getElementById('tabRange1').classList.remove('active');renderUpcoming()});
 
-// ---------- Kickoff ----------
+/* ---------------- Kickoff ---------------- */
 loadCalendars();
 loadYouTube();
 loadIssues();
@@ -380,10 +422,4 @@ setInterval(loadCalendars, 10000);
 setInterval(loadYouTube, 60000);
 setInterval(loadIssues, 60000);
 setInterval(loadHealth, 30000);
-
-// ⏱️ mise à jour du minuteur (chaque seconde) s'il y a des lives
-setInterval(()=>{
-  if (state.data.live && state.data.live.length){
-    renderLive();
-  }
-}, 1000);
+setInterval(()=>{ if (state.data.live && state.data.live.length){ renderLive(); } }, 1000);
