@@ -126,28 +126,38 @@ function renderLive(){
       const isPreview = (x.lifeCycleStatus||"") === "testing";
       const timer = elapsedHM(x.startedAt); // mm:ss ou hh:mm
 
+      // ⚠️ On remplit les 4 colonnes de .item dans l’ordre :
+      // [0] gauche: pastille + titre + timer (+ privé)
+      // [1] milieu: badge LIVE
+      // [2] vide (réservé / future info)
+      // [3] droite: lien Ouvrir
       const el=document.createElement('div');el.className='item';
       el.innerHTML=`
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
-          <!-- Bloc gauche: pastille, titre, minuteur, badge privé -->
-          <div style="display:flex;align-items:center;gap:.6rem;min-width:0;flex:1;">
-            <span style="width:.55rem;height:.55rem;background:#e11900;border-radius:9999px;display:inline-block;box-shadow:0 0 0 2px rgba(225,25,0,.15)"></span>
-            <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.title}</div>
-            <span class="muted" style="font-variant-numeric:tabular-nums;">${timer}</span>
-            ${isPriv?`<span class="tag" style="background:#555;border-color:#444;flex:0 0 auto;">Privé</span>`:""}
-          </div>
+        <!-- Col 1 (gauche) -->
+        <div style="display:flex;align-items:center;gap:.6rem;min-width:0;">
+          <span class="dot-live"></span>
+          <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.title}</div>
+          <span class="muted" style="font-variant-numeric:tabular-nums;">${timer}</span>
+          ${isPriv?`<span class="tag" style="background:#555;border-color:#444;">Privé</span>`:""}
+        </div>
 
-          <!-- Bloc droite: LIVE + Ouvrir -->
-          <div style="display:flex;align-items:center;gap:.6rem;flex:0 0 auto;">
-            <span style="font-weight:800;letter-spacing:.08em;border:2px solid #e11900;color:#e11900;border-radius:9999px;padding:.15rem .5rem;white-space:nowrap;flex:0 0 auto;">LIVE${isPreview?' (preview)':''}</span>
-            <a class="tag" href="${x.url}" target="_blank" style="flex:0 0 auto;">Ouvrir</a>
-          </div>
-        </div>`;
+        <!-- Col 2 (milieu) -->
+        <div style="text-align:center;">
+          <span class="live-pill">LIVE${isPreview?' (preview)':''}</span>
+        </div>
+
+        <!-- Col 3 (vide pour l’instant) -->
+        <div></div>
+
+        <!-- Col 4 (droite) -->
+        <a class="tag" href="${x.url}" target="_blank" style="justify-self:end;">Ouvrir</a>
+      `;
       box.appendChild(el);
     });
     return;
   }
 
+  // UPCOMING fallback (grisé)
   let next3=(state.data.ytUpcoming||[])
     .filter(x=>x.scheduledStart?isInFutureUTC(x.scheduledStart):true)
     .sort((a,b)=>parseUTCDate(a.scheduledStart)-parseUTCDate(b.scheduledStart))
@@ -168,16 +178,23 @@ function renderLive(){
     el.className='item';
     el.setAttribute('style','position:relative;opacity:.45;');
     el.innerHTML=`
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
-        <div style="display:flex;align-items:center;gap:.6rem;min-width:0;flex:1;">
-          <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.title}</div>
-          ${x.visibility && x.visibility.toLowerCase()==='private' ? `<span class="tag" style="background:#555;border-color:#444;">Privé</span>` : ``}
-        </div>
-        <div style="display:flex;align-items:center;gap:.6rem;flex:0 0 auto;">
-          <span class="muted" style="white-space:nowrap;">${x.when}</span>
-          ${x.url?`<a class="tag" href="${x.url}" target="_blank">Ouvrir</a>`:`<span class="tag">${x.tag}</span>`}
-        </div>
+      <!-- Col 1 (gauche) -->
+      <div style="display:flex;align-items:center;gap:.6rem;min-width:0;">
+        <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.title}</div>
+        ${x.visibility && x.visibility.toLowerCase()==='private' ? `<span class="tag" style="background:#555;border-color:#444;">Privé</span>` : ``}
       </div>
+
+      <!-- Col 2 (milieu) -->
+      <div style="text-align:center;">
+        <span class="tag">UPCOMING</span>
+      </div>
+
+      <!-- Col 3 (infos heure) -->
+      <div class="muted" style="white-space:nowrap;">${x.when}</div>
+
+      <!-- Col 4 (droite) -->
+      ${x.url?`<a class="tag" href="${x.url}" target="_blank" style="justify-self:end;">Ouvrir</a>`:`<span></span>`}
+
       <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">
         <span style="font-weight:700;letter-spacing:.1em;border:1px solid currentColor;border-radius:9999px;padding:.2rem .6rem;opacity:.9;">UPCOMING</span>
       </div>`;
@@ -221,7 +238,7 @@ function renderNext90(){
       <div style="font-weight:600;">${x.title}</div>
       <div></div>
       <div>${x.time}</div>
-      ${x.url?`<a class="tag" href="${x.url}" target="_blank">Ouvrir</a>`:''}`;
+      ${x.url?`<a class="tag" href="${x.url}" target="_blank" style="justify-self:end;">Ouvrir</a>`:''}`;
     box.appendChild(el);
   });
 }

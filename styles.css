@@ -31,8 +31,11 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: ui-san
 }
 .card-title { font-weight: 700; margin-bottom: 10px; color: var(--accent); }
 .list { display: flex; flex-direction: column; gap: 8px; }
-.item { display: grid; grid-template-columns: 1.2fr 1fr 1fr 1fr; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 12px; background: var(--muted); }
+
+/* 4 colonnes : [gauche (titre+timer)] [milieu (LIVE)] [vide/infos] [droite (Ouvrir)] */
+.item { display: grid; grid-template-columns: 1.2fr 1fr auto auto; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 12px; background: var(--muted); align-items: center; }
 .item .tag { justify-self: end; padding: 2px 8px; border-radius: 999px; font-size: 12px; border: 1px solid var(--border); background: #0f1320; }
+
 .grid-health { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 @media (min-width: 900px) { .grid-health { grid-template-columns: repeat(3, 1fr); } }
 .health { display: grid; grid-template-columns: 1fr auto; gap: 6px; padding: 10px; background: var(--muted); border: 1px solid var(--border); border-radius: 12px; }
@@ -41,9 +44,11 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: ui-san
 .status-good { background: var(--ok); color: #2b1b00; }
 .status-bad { background: var(--bad); color: #180000; }
 .status-nodata { background: var(--none); color: #0a0f1a; }
+
 .tabs { margin-top: 20px; display: flex; gap: 8px; }
 .tab { background: var(--muted); color: var(--text); border: 1px solid var(--border); padding: 8px 12px; border-radius: 10px; cursor: pointer; }
 .tab.active { background: #0f1320; }
+
 .panel { margin-top: 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 12px; }
 .filters { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 10px; }
 .filters input[type="search"] { background: var(--muted); color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; min-width: 240px; }
@@ -97,3 +102,14 @@ body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-ap
 .tag-ok{background:rgba(46,160,67,.15);border:1px solid rgba(46,160,67,.35)}
 .tag-warn{background:rgba(242,153,0,.18);border:1px solid rgba(242,153,0,.45)}
 .tag-error{background:rgba(229,83,75,.18);border:1px solid rgba(229,83,75,.45)}
+
+/* ====== AJOUTS POUR LIVE CENTRE + PASTILLE ====== */
+.live-pill{
+  font-weight:800; letter-spacing:.08em;
+  border:2px solid var(--bad); color: var(--bad);
+  border-radius:9999px; padding:.15rem .6rem; white-space:nowrap;
+}
+.dot-live{
+  display:inline-block; width:.6rem; height:.6rem; border-radius:9999px;
+  background: var(--bad); box-shadow:0 0 0 2px rgba(255,95,95,.18); margin-right:.4rem;
+}
