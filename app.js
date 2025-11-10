@@ -85,10 +85,7 @@ function endOfWeekSunday(dt) {
   e.setHours(23, 59, 59, 999);
   return e;
 }
-function endOfComingSunday(dt) {
-  // prochain dimanche par rapport à "maintenant"
-  return endOfWeekSunday(new Date());
-}
+function endOfComingSunday(dt) { return endOfWeekSunday(new Date()); }
 function endOfNextWeekSunday(dt) {
   const s = startOfWeekMonday(dt);
   const e = new Date(s);
@@ -232,7 +229,9 @@ function renderNext90(){
 function renderHealth(){
   const box=document.getElementById('ytHealth');box.innerHTML='';
   if(!state.data.live.length){return}
-  if(!state.data.health.length){return}
+  if(!state.data.health.length){
+    const e=document.createElement('div'); e.className='muted'; e.textContent='—'; box.appendChild(e); return;
+  }
   state.data.health.forEach(x=>{
     const since=timeSince(x.lastUpdate);
     const el=document.createElement('div');
@@ -329,6 +328,17 @@ async function loadYouTube(){
   state.data.ytUpcoming = (ytUp.items || []).map(x => ({ ...x }));
 
   renderLive(); renderNext90(); setLastUpdate();
+
+  // dès qu'on a des lives/testings, on rafraîchit l'ingest
+  if (state.data.live && state.data.live.length) {
+    await loadHealth();
+  }
+}
+
+async function loadHealth(){
+  const h = await fetchJSON('/api/health').catch(()=>({items:[]}));
+  state.data.health = h.items || [];
+  renderHealth();
 }
 
 async function loadIssues(){
@@ -338,7 +348,7 @@ async function loadIssues(){
 }
 
 // ---------- UI events ----------
-document.getElementById('refreshBtn').addEventListener('click',()=>{loadCalendars();loadYouTube();loadIssues()});
+document.getElementById('refreshBtn').addEventListener('click',()=>{loadCalendars();loadYouTube();loadIssues();loadHealth();});
 document.getElementById('prodFilter').addEventListener('change',e=>{state.filterProd=e.target.value;renderUpcoming()});
 document.getElementById('searchInput').addEventListener('input',e=>{state.search=e.target.value;renderUpcoming()});
 document.getElementById('tabRange1').addEventListener('click',()=>{state.activeUpcomingTab='RANGE1';document.getElementById('tabRange1').classList.add('active');document.getElementById('tabRange2').classList.remove('active');renderUpcoming()});
@@ -348,9 +358,11 @@ document.getElementById('tabRange2').addEventListener('click',()=>{state.activeU
 loadCalendars();
 loadYouTube();
 loadIssues();
+loadHealth();
 setInterval(loadCalendars, 10000);
 setInterval(loadYouTube, 60000);
 setInterval(loadIssues, 60000);
+setInterval(loadHealth, 30000); // health refresh plus rapide
 
 // ⏱️ mise à jour du minuteur (chaque seconde) s'il y a des lives
 setInterval(()=>{
