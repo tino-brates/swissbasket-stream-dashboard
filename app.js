@@ -16,13 +16,18 @@ const state = {
   }
 };
 
+// ---------- Helpers fuseau horaire Europe/Zurich ----------
 const CH_TZ = 'Europe/Zurich';
 function parseUTCDate(input) { return input instanceof Date ? input : new Date(input); }
 function fmtDateCH(dateObj) {
-  return new Intl.DateTimeFormat('fr-CH',{timeZone:CH_TZ,weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'}).format(dateObj);
+  return new Intl.DateTimeFormat('fr-CH', {
+    timeZone: CH_TZ, weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric'
+  }).format(dateObj);
 }
 function fmtTimeCH(dateObj) {
-  return new Intl.DateTimeFormat('fr-CH',{timeZone:CH_TZ,hour:'2-digit',minute:'2-digit'}).format(dateObj);
+  return new Intl.DateTimeFormat('fr-CH', {
+    timeZone: CH_TZ, hour: '2-digit', minute: '2-digit'
+  }).format(dateObj);
 }
 function fmtDateUTC(d){return fmtDateCH(parseUTCDate(d));}
 function fmtTimeUTC(d){return fmtTimeCH(parseUTCDate(d));}
@@ -31,11 +36,11 @@ function pad2(n){return n<10?`0${n}`:`${n}`;}
 function elapsedHM(start){
   if(!start)return"";
   const secs=Math.max(0,Math.floor((Date.now()-parseUTCDate(start).getTime())/1000));
-  const h=Math.floor(secs/3600);const m=Math.floor((secs%3600)/60);
-  return h>0?`${pad2(h)}:${pad2(m)}`:`${pad2(m)}:${pad2(secs%60)}`;
+  const h=Math.floor(secs/3600);const m=Math.floor((secs%3600)/60);const s=secs%60;
+  return h>0?`${pad2(h)}:${pad2(m)}`:`${pad2(m)}:${pad2(s)}`;
 }
 
-// ------------------ RENDER LIVE ------------------
+// ---------- RENDER LIVE ----------
 function renderLive(){
   const box=document.getElementById('liveNow'); box.innerHTML='';
 
@@ -45,19 +50,19 @@ function renderLive(){
       const isPreview=(x.lifeCycleStatus||"")==="testing";
       const timer=elapsedHM(x.startedAt);
 
-      const el=document.createElement('div');
-      el.className='item';
+      const el=document.createElement('div'); el.className='item';
       el.innerHTML=`
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:.6rem;flex-wrap:wrap;">
-          <div style="display:flex;align-items:center;gap:.6rem;flex:1;min-width:0;">
-            <span style="width:.55rem;height:.55rem;background:#e11900;border-radius:9999px;display:inline-block;"></span>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;gap:.6rem;min-width:0;flex:1;">
+            <span style="width:.55rem;height:.55rem;background:#e11900;border-radius:9999px;display:inline-block;box-shadow:0 0 0 2px rgba(225,25,0,.15)"></span>
             <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.title}</div>
-            <span class="muted" style="font-variant-numeric:tabular-nums;">${timer}</span>
-            ${isPriv?`<span class="tag" style="background:#555;border-color:#444;">Privé</span>`:""}
+            ${isPriv?`<span class="tag" style="background:#555;border-color:#444;flex:0 0 auto;">Privé</span>`:""}
           </div>
-          <div style="display:flex;align-items:center;gap:.6rem;flex-shrink:0;">
-            <span style="font-weight:800;letter-spacing:.08em;border:2px solid #e11900;color:#e11900;border-radius:9999px;padding:.15rem .5rem;white-space:nowrap;">LIVE${isPreview?' (preview)':''}</span>
-            <a class="tag" href="${x.url}" target="_blank">Ouvrir</a>
+
+          <div style="display:flex;align-items:center;gap:.6rem;flex:0 0 auto;">
+            <span style="font-weight:800;letter-spacing:.08em;border:2px solid #e11900;color:#e11900;border-radius:9999px;padding:.15rem .5rem;white-space:nowrap;flex:0 0 auto;">LIVE${isPreview?' (preview)':''}</span>
+            <span class="muted" style="min-width:3.4rem;text-align:right;font-variant-numeric:tabular-nums;">${timer}</span>
+            <a class="tag" href="${x.url}" target="_blank" style="flex:0 0 auto;">Ouvrir</a>
           </div>
         </div>`;
       box.appendChild(el);
@@ -79,14 +84,14 @@ function renderLive(){
     const el=document.createElement('div');
     el.className='item'; el.style.opacity='.45';
     el.innerHTML=`
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:.6rem;flex-wrap:wrap;">
-        <div style="display:flex;align-items:center;gap:.6rem;flex:1;min-width:0;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:.6rem;min-width:0;flex:1;">
           <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.title}</div>
-          ${isPriv?`<span class="tag" style="background:#555;border-color:#444;">Privé</span>`:""}
+          ${isPriv?`<span class="tag" style="background:#555;border-color:#444;flex:0 0 auto;">Privé</span>`:""}
         </div>
-        <div style="display:flex;align-items:center;gap:.6rem;flex-shrink:0;">
-          <span class="muted">${fmtDateUTC(x.scheduledStart)} ${fmtTimeUTC(x.scheduledStart)}</span>
-          <a class="tag" href="${x.url}" target="_blank">Ouvrir</a>
+        <div style="display:flex;align-items:center;gap:.6rem;flex:0 0 auto;">
+          <span class="muted" style="white-space:nowrap;">${fmtDateUTC(x.scheduledStart)} ${fmtTimeUTC(x.scheduledStart)}</span>
+          <a class="tag" href="${x.url}" target="_blank" style="flex:0 0 auto;">Ouvrir</a>
         </div>
       </div>
       <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">
@@ -96,12 +101,12 @@ function renderLive(){
   });
 }
 
-// --- timers refresh
+// --- minuteur auto-refresh
 setInterval(()=>{
   if(state.data.live&&state.data.live.length)renderLive();
 },1000);
 
-// --- init ---
+// --- init
 async function fetchJSON(u){const r=await fetch(u);return r.json();}
 async function loadYouTube(){
   const data=await fetchJSON('/api/live'); state.data.live=data.live||[];
