@@ -78,13 +78,29 @@ function ymdCH(dateISO) {
   return `${y}-${m}-${da}`;
 }
 
+function hmCH(dateISO) {
+  const d = new Date(dateISO);
+  const parts = new Intl.DateTimeFormat("fr-CH", {
+    timeZone: "Europe/Zurich",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).formatToParts(d);
+  const h = parseInt(parts.find(p => p.type === "hour").value, 10);
+  const m = parseInt(parts.find(p => p.type === "minute").value, 10);
+  return h * 60 + m;
+}
+
 export default async function handler(req, res) {
   const debugFlag = req.query.debug === "1" || req.query.debug === "true";
   try {
     const access = await getAccessToken();
     const all = await listAllBroadcasts(access);
 
-    const todayCH = ymdCH(Date.now());
+    const now = Date.now();
+    const todayCH = ymdCH(now);
+    const nowHmCH = hmCH(now);
+
     const todayItems = [];
     const debugDates = [];
 
@@ -94,6 +110,7 @@ export default async function handler(req, res) {
       if (!t) continue;
 
       const dYmd = ymdCH(t);
+      const hm = hmCH(t);
       const st = (b.status?.lifeCycleStatus || "").toLowerCase();
       const privacy = (b.status?.privacyStatus || "").toLowerCase();
 
@@ -102,10 +119,12 @@ export default async function handler(req, res) {
         lifeCycleStatus: st,
         privacy,
         when: t,
-        ymd: dYmd
+        ymd: dYmd,
+        hmCH: hm
       });
 
       if (dYmd !== todayCH) continue;
+      if (hm < nowHmCH) continue;
       if (!cd.boundStreamId) continue;
 
       todayItems.push(b);
@@ -149,6 +168,7 @@ export default async function handler(req, res) {
       payload.debug = {
         totalBroadcasts: all.length,
         todayCH,
+        nowHmCH,
         matched: items.length,
         rawDates: debugDates
       };
