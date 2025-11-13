@@ -64,7 +64,6 @@ async function listStreamsByIds(accessToken, ids) {
   return map;
 }
 
-// yyyy-mm-dd en timezone Europe/Zurich
 function ymdCH(dateISO) {
   const d = new Date(dateISO);
   const parts = new Intl.DateTimeFormat("fr-CH", {
@@ -86,7 +85,8 @@ export default async function handler(req, res) {
     const access = await getAccessToken();
     const all = await listAllBroadcasts(access);
 
-    const todayCH = ymdCH(Date.now());
+    const nowMs = Date.now();
+    const todayCH = ymdCH(nowMs);
     const todayBroadcasts = [];
     const debugDates = [];
 
@@ -95,33 +95,33 @@ export default async function handler(req, res) {
       const cd = b.contentDetails || {};
       const st = (b.status?.lifeCycleStatus || "").toLowerCase();
       const privacy = (b.status?.privacyStatus || "").toLowerCase();
-
-      const scheduled = sn.scheduledStartTime || null;
       const isLive = st === "live";
 
+      const scheduled = sn.scheduledStartTime || null;
+
       if (scheduled) {
+        const schedMs = Date.parse(scheduled);
         const dYmd = ymdCH(scheduled);
         debugDates.push({
           id: b.id,
           lifeCycleStatus: st,
           privacy,
           scheduled,
-          ymd: dYmd
+          ymd: dYmd,
+          schedMs
         });
-        if (dYmd !== todayCH && !isLive) {
-          continue;
-        }
+        if (dYmd !== todayCH) continue;
+        if (!Number.isNaN(schedMs) && schedMs < nowMs && !isLive) continue;
       } else {
         debugDates.push({
           id: b.id,
           lifeCycleStatus: st,
           privacy,
           scheduled: null,
-          ymd: null
+          ymd: null,
+          schedMs: null
         });
-        if (!isLive) {
-          continue;
-        }
+        if (!isLive) continue;
       }
 
       if (!cd.boundStreamId) continue;
@@ -149,13 +149,12 @@ export default async function handler(req, res) {
         const stream = sid ? streamsMap.get(sid) : null;
         const ingest = stream?.cdn?.ingestionInfo || {};
         const streamKey = ingest.streamName || "";
+        if (!streamKey) return null;
 
         const streamLabelRaw = stream?.snippet?.title || "";
         let streamLabel = streamLabelRaw;
         const idx = streamLabelRaw.indexOf("(");
         if (idx > 0) streamLabel = streamLabelRaw.slice(0, idx).trim();
-
-        if (!streamKey) return null;
 
         return {
           id: b.id,

@@ -1,7 +1,3 @@
-// ------------------------------------------------------
-// Dashboard SwissBasket — FR/EN + mise en page “UPCOMING” lisible
-// ------------------------------------------------------
-
 const I18N = {
   fr: {
     title: "SwissBasket Streaming",
@@ -27,13 +23,6 @@ const I18N = {
     rest: "Time to rest 😴",
     nodata: "No data",
     ago_prefix: "il y a",
-    copy: "Copier",
-    copied: "Copié !",
-    copy_error: "Erreur",
-    today_streamkeys: "Streamkeys du jour",
-    status_live: "En direct",
-    status_upcoming: "Prévu",
-    no_streamkeys_today: "Aucun événement prévu aujourd'hui."
   },
   en: {
     title: "SwissBasket Streaming",
@@ -59,13 +48,6 @@ const I18N = {
     rest: "Time to rest 😴",
     nodata: "No data",
     ago_prefix: "ago",
-    copy: "Copy",
-    copied: "Copied!",
-    copy_error: "Error",
-    today_streamkeys: "Today's streamkeys",
-    status_live: "Live",
-    status_upcoming: "Upcoming",
-    no_streamkeys_today: "No events today."
   }
 };
 
@@ -105,8 +87,8 @@ const state = {
     issues: [],
     upcoming: [],
     health: [],
-    streamKeys: [],
-    ytMeta: { source: '', quotaBackoffUntil: 0, lastError: '' }
+    ytMeta: { source: '', quotaBackoffUntil: 0, lastError: '' },
+    streamKeys: []
   }
 };
 
@@ -143,11 +125,13 @@ function withinNextMinutesSheet(d, min) {
   const now = nowMs();
   return t >= now && t <= now + min * 60000;
 }
+function isInFutureSheet(d) { return parseSheetDate(d).getTime() >= nowMs(); }
 function withinNextMinutesUTC(d, min) {
   const t = parseUTCDate(d).getTime();
   const now = nowMs();
   return t >= now && t <= now + min * 60000;
 }
+function isInFutureUTC(d) { return parseUTCDate(d).getTime() >= nowMs(); }
 
 function startOfWeekMonday(dt) {
   const d = parseSheetDate(dt ?? new Date());
@@ -173,7 +157,7 @@ function endOfNextWeekSunday(dt) {
   return e;
 }
 
-function pad2(n){return n<10?`0${n}`:`${n}`;}
+function pad2(n){return n<10?`0${n}`:`${n}`}
 function elapsedHM(start){
   if(!start) return "";
   const secs=Math.max(0,Math.floor((Date.now()-parseUTCDate(start).getTime())/1000));
@@ -190,9 +174,9 @@ function normProd(s){
   if(v==='TV') return 'TV';
   return '';
 }
-function prodGroup(p){if(p==='Swish Live'||p==='Manual')return'SwishManual';return p||'';}
-function badgeForStatus(s){const map={perfect:'status-perfect',good:'status-good',bad:'status-bad',nodata:'status-nodata'};return map[s]||'status-nodata';}
-function badgeForIssue(s){const map={sufficient:'tag-ok',insufficient:'tag-warn',offline:'tag-error',unknown:'tag-warn'};return map[s]||'tag-warn';}
+function prodGroup(p){if(p==='Swish Live'||p==='Manual')return'SwishManual';return p||''}
+function badgeForStatus(s){const map={perfect:'status-perfect',good:'status-good',bad:'status-bad',nodata:'status-nodata'};return map[s]||'status-nodata'}
+function badgeForIssue(s){const map={sufficient:'tag-ok',insufficient:'tag-warn',offline:'tag-error',unknown:'tag-warn'};return map[s]||'tag-warn'}
 
 function renderLive(){
   const box=document.getElementById('liveNow');box.innerHTML='';
@@ -223,7 +207,7 @@ function renderLive(){
   }
 
   let next3=(state.data.ytUpcoming||[])
-    .filter(x=>x.scheduledStart?parseUTCDate(x.scheduledStart).getTime()>=nowMs():true)
+    .filter(x=>x.scheduledStart?isInFutureUTC(x.scheduledStart):true)
     .sort((a,b)=>parseUTCDate(a.scheduledStart)-parseUTCDate(b.scheduledStart))
     .slice(0,3)
     .map(x=>({
@@ -233,7 +217,7 @@ function renderLive(){
       visibility:x.visibility||''
     }));
 
-  if(next3.length===0){return;}
+  if(next3.length===0){return}
 
   next3.forEach(x=>{
     const el=document.createElement('div');
@@ -282,9 +266,7 @@ function renderNext90(){
       .map(x=>({ title:`${x.teamA} vs ${x.teamB}`, time:fmtTimeSheet(x.datetime), url:'' }));
     soon = sheetSoon;
   }
-  if(!soon.length){
-    const e=document.createElement('div');e.className='muted';e.textContent=t('rest');box.appendChild(e);return;
-  }
+  if(!soon.length){const e=document.createElement('div');e.className='muted';e.textContent=t('rest');box.appendChild(e);return}
   soon.forEach(x=>{
     const el=document.createElement('div');el.className='item';
     el.innerHTML=`
@@ -298,7 +280,7 @@ function renderNext90(){
 
 function renderHealth(){
   const box=document.getElementById('ytHealth');box.innerHTML='';
-  if(!state.data.live.length){return;}
+  if(!state.data.live.length){return}
   if(!state.data.health.length){
     const e=document.createElement('div'); e.className='muted'; e.textContent='—'; box.appendChild(e); return;
   }
@@ -317,82 +299,8 @@ function renderHealth(){
     box.appendChild(el);
   });
 }
-
-function renderStreamKeys(){
-  const box = document.getElementById('streamKeys');
-  if (!box) return;
-  box.innerHTML = '';
-
-  const items = state.data.streamKeys || [];
-
-  if (!items.length) {
-    const e = document.createElement('div');
-    e.className = 'muted';
-    e.textContent = t('no_streamkeys_today');
-    box.appendChild(e);
-    return;
-  }
-
-  const sorted = items.slice().sort((a,b)=>{
-    if (!a.when && !b.when) return 0;
-    if (!a.when) return 1;
-    if (!b.when) return -1;
-    return new Date(a.when) - new Date(b.when);
-  });
-
-  sorted.forEach(item=>{
-    const statusLabelTxt = item.status === 'live' ? t('status_live') : t('status_upcoming');
-    const timeLabel = item.when ? fmtTimeUTC(item.when) : '';
-    const streamKey = item.streamKey || '';
-    const label = item.streamLabel || t('copy');
-
-    const el = document.createElement('div');
-    el.className = 'item';
-    el.innerHTML = `
-      <div style="display:flex;flex-direction:column;gap:4px;min-width:0;">
-        <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.title}</div>
-      </div>
-      <div class="cell-center">
-        <button class="link-like streamkey-btn" data-streamkey="${streamKey}">
-          ${label}
-        </button>
-      </div>
-      <div class="muted" style="white-space:nowrap;">
-        ${timeLabel}
-      </div>
-      <a class="tag" href="${item.url}" target="_blank" style="justify-self:end;">
-        ${t('open')}
-      </a>
-    `;
-    box.appendChild(el);
-  });
-
-  box.querySelectorAll('.streamkey-btn').forEach(btn=>{
-    btn.addEventListener('click', async ()=>{
-      const sk = btn.getAttribute('data-streamkey') || '';
-      if (!sk) return;
-      try {
-        await navigator.clipboard.writeText(sk);
-        const old = btn.textContent;
-        btn.textContent = t('copied');
-        setTimeout(()=>{ btn.textContent = old; }, 1200);
-      } catch (e) {
-        console.error(e);
-        const old = btn.textContent;
-        btn.textContent = t('copy_error');
-        setTimeout(()=>{ btn.textContent = old; }, 1200);
-      }
-    });
-  });
-}
-
 function statusLabel(s){
-  const map={
-    perfect:{fr:'Parfait',en:'Perfect'},
-    good:{fr:'Bon',en:'Good'},
-    bad:{fr:'Mauvais',en:'Bad'},
-    nodata:{fr:t('nodata'),en:t('nodata')}
-  };
+  const map={perfect:{fr:'Parfait',en:'Perfect'},good:{fr:'Bon',en:'Good'},bad:{fr:'Mauvais',en:'Bad'},nodata:{fr:t('nodata'),en:t('nodata')}};
   const k=(s||'').toLowerCase();
   return (map[k] && map[k][LANG]) || t('nodata');
 }
@@ -429,22 +337,64 @@ function renderUpcoming(){
       return [x.teamA,x.teamB,x.arena,x.production,x.competition].some(v=>(v||'').toLowerCase().includes(search));
     });
   tbody.innerHTML='';
-  rows
-    .sort((a,b)=>parseSheetDate(a.datetime)-parseSheetDate(b.datetime))
-    .forEach(x=>{
-      const dt=parseSheetDate(x.datetime);
-      const tr=document.createElement('tr');
-      tr.innerHTML=`
-        <td>${fmtDateCH(dt)}</td>
-        <td>${fmtTimeCH(dt)}</td>
-        <td>${x.competition||''}</td>
-        <td>${x.teamA}</td>
-        <td>${x.teamB}</td>
-        <td>${x.arena}</td>
-        <td>${x.prod}</td>
-        <td>${x.youtubeEventId?`<a target="_blank" href="https://www.youtube.com/live/${x.youtubeEventId}">${x.youtubeEventId}</a>`:''}</td>`;
-      tbody.appendChild(tr);
+  rows.sort((a,b)=>parseSheetDate(a.datetime)-parseSheetDate(b.datetime)).forEach(x=>{
+    const dt=parseSheetDate(x.datetime);
+    const tr=document.createElement('tr');
+    tr.innerHTML=`
+      <td>${fmtDateCH(dt)}</td>
+      <td>${fmtTimeCH(dt)}</td>
+      <td>${x.competition||''}</td>
+      <td>${x.teamA}</td>
+      <td>${x.teamB}</td>
+      <td>${x.arena}</td>
+      <td>${x.prod}</td>
+      <td>${x.youtubeEventId?`<a target="_blank" href="https://www.youtube.com/live/${x.youtubeEventId}">${x.youtubeEventId}</a>`:''}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function renderStreamKeys(){
+  const box = document.getElementById('streamKeys');
+  if(!box) return;
+  box.innerHTML = '';
+  const items = state.data.streamKeys || [];
+  if(!items.length){
+    const e = document.createElement('div');
+    e.className = 'muted';
+    e.textContent = t('rest');
+    box.appendChild(e);
+    return;
+  }
+  items.forEach(it=>{
+    const badge = it.status === 'live'
+      ? `<span class="live-pill">LIVE</span>`
+      : `<span class="tag">${t('upcoming_tag')}</span>`;
+    const whenTxt = it.when ? `${fmtDateUTC(it.when)} ${fmtTimeUTC(it.when)}` : '';
+    const el = document.createElement('div');
+    el.className = 'item';
+    el.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:4px;min-width:0;">
+        <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${it.title}</div>
+        <div class="muted" style="font-size:.85em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${it.streamKey}</div>
+      </div>
+      <div class="cell-center">${badge}</div>
+      <div class="date-soft" style="white-space:nowrap;">${whenTxt}</div>
+      <div style="display:flex;gap:.4rem;justify-content:flex-end;">
+        <button class="tag js-copy-key" data-key="${it.streamKey}">${it.streamLabel || 'Key'}</button>
+        <a class="tag" href="${it.url}" target="_blank">${t('open')}</a>
+      </div>
+    `;
+    box.appendChild(el);
+  });
+  box.querySelectorAll('.js-copy-key').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const key = btn.getAttribute('data-key') || '';
+      if(!key) return;
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(key).catch(()=>{});
+      }
     });
+  });
 }
 
 function renderAll(){
@@ -452,35 +402,26 @@ function renderAll(){
   renderIssues();
   renderNext90();
   renderHealth();
-  renderStreamKeys();
   renderUpcoming();
+  renderStreamKeys();
 }
 
 function setLastUpdate(){
   const el=document.getElementById('lastUpdate');
   const d=new Date();
-  el.textContent=new Intl.DateTimeFormat(
-    LANG==='fr'?'fr-CH':'en-GB',
-    {timeZone:CH_TZ,hour:'2-digit',minute:'2-digit',second:'2-digit'}
-  ).format(d);
+  el.textContent=new Intl.DateTimeFormat(LANG==='fr'?'fr-CH':'en-GB',{timeZone:CH_TZ,hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(d);
 }
 
-async function fetchJSON(url){
-  const r=await fetch(url,{cache:'no-store'});
-  if(!r.ok)throw new Error('http');
-  return await r.json();
-}
+async function fetchJSON(url){const r=await fetch(url,{cache:'no-store'});if(!r.ok)throw new Error('http');return await r.json()}
 
 async function loadCalendars(){
   const upcoming=await fetchJSON('/api/upcoming');
   state.data.upcoming=upcoming.items||[];
-  renderUpcoming();
-  setLastUpdate();
+  renderUpcoming(); setLastUpdate();
 }
 
 async function loadYouTube(){
-  let payload = await fetchJSON('/api/live')
-    .catch(()=>({live:[], upcoming:[], meta:{source:'err', lastError:'fetch /api/live'}}));
+  let payload = await fetchJSON('/api/live').catch(()=>({live:[], upcoming:[], meta:{source:'err', lastError:'fetch /api/live'}}));
   if ((!payload.live || payload.live.length===0) && (!payload.upcoming || payload.upcoming.length===0)) {
     const atom = await fetchJSON('/api/live-feed').catch(()=>({live:[],upcoming:[],source:'atom-err'}));
     payload = { live: atom.live||[], upcoming: atom.upcoming||[], meta: { source: atom.source||'atom', lastError:'' } };
@@ -491,9 +432,7 @@ async function loadYouTube(){
   const ytUp = await fetchJSON('/api/yt-upcoming').catch(()=>({items:[]}));
   state.data.ytUpcoming = (ytUp.items || []).map(x => ({ ...x }));
 
-  renderLive();
-  renderNext90();
-  setLastUpdate();
+  renderLive(); renderNext90(); setLastUpdate();
   if (state.data.live && state.data.live.length) await loadHealth();
 }
 
@@ -515,48 +454,20 @@ async function loadStreamKeys(){
   renderStreamKeys();
 }
 
-document.getElementById('refreshBtn').addEventListener('click',()=>{
-  loadCalendars();
-  loadYouTube();
-  loadIssues();
-  loadHealth();
-  loadStreamKeys();
-});
-document.getElementById('prodFilter').addEventListener('change',e=>{
-  state.filterProd=e.target.value;
-  renderUpcoming();
-});
-document.getElementById('searchInput').addEventListener('input',e=>{
-  state.search=e.target.value;
-  renderUpcoming();
-});
-document.getElementById('tabRange1').addEventListener('click',()=>{
-  state.activeUpcomingTab='RANGE1';
-  document.getElementById('tabRange1').classList.add('active');
-  document.getElementById('tabRange2').classList.remove('active');
-  renderUpcoming();
-});
-document.getElementById('tabRange2').addEventListener('click',()=>{
-  state.activeUpcomingTab='RANGE2';
-  document.getElementById('tabRange2').classList.add('active');
-  document.getElementById('tabRange1').classList.remove('active');
-  renderUpcoming();
-});
+document.getElementById('refreshBtn').addEventListener('click',()=>{loadCalendars();loadYouTube();loadIssues();loadHealth();loadStreamKeys();});
+document.getElementById('prodFilter').addEventListener('change',e=>{state.filterProd=e.target.value;renderUpcoming()});
+document.getElementById('searchInput').addEventListener('input',e=>{state.search=e.target.value;renderUpcoming()});
+document.getElementById('tabRange1').addEventListener('click',()=>{state.activeUpcomingTab='RANGE1';document.getElementById('tabRange1').classList.add('active');document.getElementById('tabRange2').classList.remove('active');renderUpcoming()});
+document.getElementById('tabRange2').addEventListener('click',()=>{state.activeUpcomingTab='RANGE2';document.getElementById('tabRange2').classList.add('active');document.getElementById('tabRange1').classList.remove('active');renderUpcoming()});
 
 loadCalendars();
 loadYouTube();
 loadIssues();
 loadHealth();
 loadStreamKeys();
-
 setInterval(loadCalendars, 10000);
 setInterval(loadYouTube, 60000);
 setInterval(loadIssues, 60000);
 setInterval(loadHealth, 30000);
 setInterval(loadStreamKeys, 60000);
-
-setInterval(()=>{
-  if (state.data.live && state.data.live.length){
-    renderLive();
-  }
-}, 1000);
+setInterval(()=>{ if (state.data.live && state.data.live.length){ renderLive(); } }, 1000);
