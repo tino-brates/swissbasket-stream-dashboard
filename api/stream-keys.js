@@ -84,7 +84,6 @@ export default async function handler(req, res) {
     const access = await getAccessToken();
     const all = await listAllBroadcasts(access);
 
-    const nowMs = Date.now();
     const todayCH = ymdCH(Date.now());
     const todayItems = [];
     const debugDates = [];
@@ -93,9 +92,6 @@ export default async function handler(req, res) {
       const cd = b.contentDetails || {};
       const t = cd.actualStartTime || cd.scheduledStartTime || b.snippet?.publishedAt;
       if (!t) continue;
-
-      const whenMs = Date.parse(t);
-      if (Number.isNaN(whenMs)) continue;
 
       const dYmd = ymdCH(t);
       const st = (b.status?.lifeCycleStatus || "").toLowerCase();
@@ -110,7 +106,6 @@ export default async function handler(req, res) {
       });
 
       if (dYmd !== todayCH) continue;
-      if (whenMs < nowMs) continue;
       if (!cd.boundStreamId) continue;
 
       todayItems.push(b);
