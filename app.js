@@ -91,7 +91,6 @@ window.addEventListener("DOMContentLoaded", ()=>{
   applyI18n();
 });
 
-/* -------------- ÉTAT GLOBAL -------------- */
 const state = {
   filterProd: 'ALL',
   search: '',
@@ -107,8 +106,9 @@ const state = {
   }
 };
 
-// ---------- Helpers fuseau horaire Europe/Zurich ----------
 const CH_TZ = 'Europe/Zurich';
+const LATE_GRACE_MIN = 3;
+const dismissedLateKeys = new Set();
 
 function parseSheetDate(input) {
   if (input instanceof Date) return input;
@@ -149,11 +149,10 @@ function withinNextMinutesUTC(d, min) {
 }
 function isInFutureUTC(d) { return parseUTCDate(d).getTime() >= nowMs(); }
 
-// Semaine
 function startOfWeekMonday(dt) {
   const d = parseSheetDate(dt ?? new Date());
   const base = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const day = (base.getDay() + 6) % 7; // 0=lundi
+  const day = (base.getDay() + 6) % 7;
   base.setDate(base.getDate() - day);
   base.setHours(0, 0, 0, 0);
   return base;
@@ -174,7 +173,6 @@ function endOfNextWeekSunday(dt) {
   return e;
 }
 
-// Mini helpers
 function pad2(n){return n<10?`0${n}`:`${n}`}
 function elapsedHM(start){
   if(!start) return "";
@@ -196,11 +194,109 @@ function prodGroup(p){if(p==='Swish Live'||p==='Manual')return'SwishManual';retu
 function badgeForStatus(s){const map={perfect:'status-perfect',good:'status-good',bad:'status-bad',nodata:'status-nodata'};return map[s]||'status-nodata'}
 function badgeForIssue(s){const map={sufficient:'tag-ok',insufficient:'tag-warn',offline:'tag-error',unknown:'tag-warn'};return map[s]||'tag-warn'}
 
+function statusLabel(s){
+  const map={perfect:{fr:'Parfait',en:'Perfect'},good:{fr:'Bon',en:'Good'},bad:{fr:'Mauvais',en:'Bad'},nodata:{fr:t('nodata'),en:t('nodata')}};
+  const k=(s||'').toLowerCase();
+  return (map[k] && map[k][LANG]) || t('nodata');
+}
+function timeSince(date){
+  const s=Math.floor((Date.now()-parseUTCDate(date))/1000);
+  if(s<60)return `${s}s`;
+  const m=Math.floor(s/60);if(m<60)return `${m} min`;
+  const h=Math.floor(m/60);return `${h} h ${m%60} min`;
+}
+
+function inActiveTabRange(d){
+  const t=parseSheetDate(d).getTime();
+  const now=new Date();
+  if(state.activeUpcomingTab==='RANGE1'){
+    const end=endOfComingSunday(now).getTime();
+    return t>=Date.now() && t<=end;
+  }else{
+    const start=startOfWeekMonday(now).getTime();
+    const end=endOfNextWeekSunday(now).getTime();
+    return t>=start && t<=end;
+  }
+}
+
+/* --------- LATE EVENTS DETECTION --------- */
+function lateKey(ev){
+  return ev.url || ev.id || (ev.title + '|' + (ev.scheduledStart || ''));
+}
+
+function getLateEventsRaw(){
+  const now = nowMs();
+  return (state.data.ytUpcoming || []).filter(ev=>{
+    if(!ev || !ev.scheduledStart) return false;
+    const vis = (ev.visibility || '').toLowerCase();
+    if(vis && vis !== 'public') return false;
+    const t = parseUTCDate(ev.scheduledStart).getTime();
+    return t + LATE_GRACE_MIN*60000 < now;
+  });
+}
+
+function getLateEventsForHighlight(){
+  return getLateEventsRaw();
+}
+
+function getLateEventsForAlerts(){
+  return getLateEventsRaw().filter(ev => !dismissedLateKeys.has(lateKey(ev)));
+}
+
+/* --------- RENDER LATE ALERT POPUPS --------- */
+function dismissLateAlert(key){
+  dismissedLateKeys.add(key);
+  renderLateAlerts();
+}
+
+function renderLateAlerts(){
+  const container = document.getElementById('alertsContainer');
+  if(!container) return;
+  const late = getLateEventsForAlerts();
+  container.innerHTML = '';
+  late.forEach(ev=>{
+    const key = lateKey(ev);
+    const keyJs = key.replace(/'/g,"\\'");
+    const whenTxt = ev.scheduledStart ? `${fmtDateUTC(ev.scheduledStart)} ${fmtTimeUTC(ev.scheduledStart)}` : '';
+    const div = document.createElement('div');
+    div.className='alert';
+    div.innerHTML = `
+      <div class="alert-icon">⚠️</div>
+      <div class="alert-body">
+        <div class="alert-title">${ev.title}</div>
+        <div class="alert-meta">${t('status_upcoming')} • ${whenTxt}</div>
+      </div>
+      <button class="alert-close" onclick="dismissLateAlert('${keyJs}')">×</button>
+    `;
+    container.appendChild(div);
+  });
+}
+
+/* --------- RENDER LATE CARD IN LIVE BOX --------- */
+function renderLateCard(ev, box){
+  const when = ev.scheduledStart ? `${fmtDateUTC(ev.scheduledStart)} ${fmtTimeUTC(ev.scheduledStart)}` : '';
+  const el = document.createElement('div');
+  el.className = 'item item-late';
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:.6rem;min-width:0;">
+      <span class="dot-live"></span>
+      <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${ev.title}</div>
+    </div>
+    <div class="cell-center">
+      <span class="tag">${t('status_upcoming')}</span>
+    </div>
+    <div class="date-soft" style="white-space:nowrap;">${when}</div>
+    <a class="tag" href="${ev.url}" target="_blank" style="justify-self:end;">${t('open')}</a>
+  `;
+  box.appendChild(el);
+}
+
 /* ---------------- RENDERERS ---------------- */
 function renderLive(){
-  const box=document.getElementById('liveNow');box.innerHTML='';
+  const box=document.getElementById('liveNow');
+  box.innerHTML='';
+  const late = getLateEventsForHighlight();
 
-  // === LIVES ===
   if(state.data.live.length){
     state.data.live.forEach(x=>{
       const isPriv = (x.visibility||"").toLowerCase()==="private";
@@ -209,31 +305,32 @@ function renderLive(){
 
       const el=document.createElement('div');el.className='item';
       el.innerHTML=`
-        <!-- Col 1 : pastille + titre + minuteur -->
         <div style="display:flex;align-items:center;gap:.6rem;min-width:0;">
           <span class="dot-live"></span>
           <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.title}</div>
           <span class="muted" style="font-variant-numeric:tabular-nums;">${timer}</span>
           ${isPriv?`<span class="tag" style="background:#555;border-color:#444;">${t('private')}</span>`:""}
         </div>
-
-        <!-- Col 2 : badge LIVE -->
         <div class="cell-center">
-          <span class="live-pill">${t('status_live')}</span>
+          <span class="live-pill">${t('status_live')}${isPreview?' (preview)':''}</span>
         </div>
-
-        <!-- Col 3 : (vide, réservé) -->
         <div></div>
-
-        <!-- Col 4 : lien -->
         <a class="tag" href="${x.url}" target="_blank" style="justify-self:end;">${t('open')}</a>
       `;
       box.appendChild(el);
     });
+
+    if(late.length){
+      late.forEach(ev => renderLateCard(ev, box));
+    }
     return;
   }
 
-  // === UPCOMING (fallback) ===
+  if(late.length){
+    late.forEach(ev => renderLateCard(ev, box));
+    return;
+  }
+
   let next3=(state.data.ytUpcoming||[])
     .filter(x=>x.scheduledStart?isInFutureUTC(x.scheduledStart):true)
     .sort((a,b)=>parseUTCDate(a.scheduledStart)-parseUTCDate(b.scheduledStart))
@@ -255,13 +352,10 @@ function renderLive(){
         <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.title}</div>
         ${x.visibility && x.visibility.toLowerCase()==='private' ? `<span class="tag" style="background:#555;border-color:#444;">${t('private')}</span>` : ``}
       </div>
-
       <div class="cell-center">
         <span class="tag">${t('upcoming_tag')}</span>
       </div>
-
       <div class="date-soft" style="white-space:nowrap;">${x.when}</div>
-
       <a class="tag" href="${x.url}" target="_blank" style="justify-self:end;">${t('open')}</a>
     `;
     box.appendChild(el);
@@ -329,30 +423,6 @@ function renderHealth(){
       </div>`;
     box.appendChild(el);
   });
-}
-function statusLabel(s){
-  const map={perfect:{fr:'Parfait',en:'Perfect'},good:{fr:'Bon',en:'Good'},bad:{fr:'Mauvais',en:'Bad'},nodata:{fr:t('nodata'),en:t('nodata')}};
-  const k=(s||'').toLowerCase();
-  return (map[k] && map[k][LANG]) || t('nodata');
-}
-function timeSince(date){
-  const s=Math.floor((Date.now()-parseUTCDate(date))/1000);
-  if(s<60)return `${s}s`;
-  const m=Math.floor(s/60);if(m<60)return `${m} min`;
-  const h=Math.floor(m/60);return `${h} h ${m%60} min`;
-}
-
-function inActiveTabRange(d){
-  const t=parseSheetDate(d).getTime();
-  const now=new Date();
-  if(state.activeUpcomingTab==='RANGE1'){
-    const end=endOfComingSunday(now).getTime();
-    return t>=Date.now() && t<=end;
-  }else{
-    const start=startOfWeekMonday(now).getTime();
-    const end=endOfNextWeekSunday(now).getTime();
-    return t>=start && t<=end;
-  }
 }
 
 function renderUpcoming(){
@@ -454,7 +524,16 @@ function renderStreamKeys(){
   });
 }
 
-function renderAll(){renderLive();renderIssues();renderNext90();renderHealth();renderUpcoming();renderStreamKeys();}
+function renderAll(){
+  renderLive();
+  renderIssues();
+  renderNext90();
+  renderHealth();
+  renderUpcoming();
+  renderStreamKeys();
+  renderLateAlerts();
+}
+
 function setLastUpdate(){
   const el=document.getElementById('lastUpdate');
   const d=new Date();
@@ -477,12 +556,13 @@ async function loadYouTube(){
     payload = { live: atom.live||[], upcoming: atom.upcoming||[], meta: { source: atom.source||'atom', lastError:'' } };
   }
   state.data.live = payload.live || [];
+  state.data.ytUpcoming = payload.upcoming || [];
   state.data.ytMeta = payload.meta || { source:'', quotaBackoffUntil:0, lastError:'' };
 
-  const ytUp = await fetchJSON('/api/yt-upcoming').catch(()=>({items:[]}));
-  state.data.ytUpcoming = (ytUp.items || []).map(x => ({ ...x }));
-
-  renderLive(); renderNext90(); setLastUpdate();
+  renderLive();
+  renderNext90();
+  renderLateAlerts();
+  setLastUpdate();
   if (state.data.live && state.data.live.length) await loadHealth();
 }
 
