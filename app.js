@@ -23,6 +23,13 @@ const I18N = {
     rest: "Time to rest 😴",
     nodata: "No data",
     ago_prefix: "il y a",
+    copy: "Copier",
+    copied: "Copié !",
+    copy_error: "Erreur",
+    today_streamkeys: "Streamkeys du jour",
+    status_live: "En direct",
+    status_upcoming: "Prévu",
+    no_streamkeys_today: "Aucun événement prévu aujourd'hui."
   },
   en: {
     title: "SwissBasket Streaming",
@@ -48,6 +55,13 @@ const I18N = {
     rest: "Time to rest 😴",
     nodata: "No data",
     ago_prefix: "ago",
+    copy: "Copy",
+    copied: "Copied!",
+    copy_error: "Error",
+    today_streamkeys: "Today's streamkeys",
+    status_live: "Live",
+    status_upcoming: "Upcoming",
+    no_streamkeys_today: "No events today."
   }
 };
 
@@ -77,6 +91,7 @@ window.addEventListener("DOMContentLoaded", ()=>{
   applyI18n();
 });
 
+/* -------------- ÉTAT GLOBAL -------------- */
 const state = {
   filterProd: 'ALL',
   search: '',
@@ -92,6 +107,7 @@ const state = {
   }
 };
 
+// ---------- Helpers fuseau horaire Europe/Zurich ----------
 const CH_TZ = 'Europe/Zurich';
 
 function parseSheetDate(input) {
@@ -133,10 +149,11 @@ function withinNextMinutesUTC(d, min) {
 }
 function isInFutureUTC(d) { return parseUTCDate(d).getTime() >= nowMs(); }
 
+// Semaine
 function startOfWeekMonday(dt) {
   const d = parseSheetDate(dt ?? new Date());
   const base = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const day = (base.getDay() + 6) % 7;
+  const day = (base.getDay() + 6) % 7; // 0=lundi
   base.setDate(base.getDate() - day);
   base.setHours(0, 0, 0, 0);
   return base;
@@ -157,6 +174,7 @@ function endOfNextWeekSunday(dt) {
   return e;
 }
 
+// Mini helpers
 function pad2(n){return n<10?`0${n}`:`${n}`}
 function elapsedHM(start){
   if(!start) return "";
@@ -178,9 +196,11 @@ function prodGroup(p){if(p==='Swish Live'||p==='Manual')return'SwishManual';retu
 function badgeForStatus(s){const map={perfect:'status-perfect',good:'status-good',bad:'status-bad',nodata:'status-nodata'};return map[s]||'status-nodata'}
 function badgeForIssue(s){const map={sufficient:'tag-ok',insufficient:'tag-warn',offline:'tag-error',unknown:'tag-warn'};return map[s]||'tag-warn'}
 
+/* ---------------- RENDERERS ---------------- */
 function renderLive(){
   const box=document.getElementById('liveNow');box.innerHTML='';
 
+  // === LIVES ===
   if(state.data.live.length){
     state.data.live.forEach(x=>{
       const isPriv = (x.visibility||"").toLowerCase()==="private";
@@ -189,16 +209,23 @@ function renderLive(){
 
       const el=document.createElement('div');el.className='item';
       el.innerHTML=`
+        <!-- Col 1 : pastille + titre + minuteur -->
         <div style="display:flex;align-items:center;gap:.6rem;min-width:0;">
           <span class="dot-live"></span>
           <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.title}</div>
           <span class="muted" style="font-variant-numeric:tabular-nums;">${timer}</span>
           ${isPriv?`<span class="tag" style="background:#555;border-color:#444;">${t('private')}</span>`:""}
         </div>
+
+        <!-- Col 2 : badge LIVE -->
         <div class="cell-center">
-          <span class="live-pill">LIVE${isPreview?' (preview)':''}</span>
+          <span class="live-pill">${t('status_live')}</span>
         </div>
+
+        <!-- Col 3 : (vide, réservé) -->
         <div></div>
+
+        <!-- Col 4 : lien -->
         <a class="tag" href="${x.url}" target="_blank" style="justify-self:end;">${t('open')}</a>
       `;
       box.appendChild(el);
@@ -206,6 +233,7 @@ function renderLive(){
     return;
   }
 
+  // === UPCOMING (fallback) ===
   let next3=(state.data.ytUpcoming||[])
     .filter(x=>x.scheduledStart?isInFutureUTC(x.scheduledStart):true)
     .sort((a,b)=>parseUTCDate(a.scheduledStart)-parseUTCDate(b.scheduledStart))
@@ -227,10 +255,13 @@ function renderLive(){
         <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.title}</div>
         ${x.visibility && x.visibility.toLowerCase()==='private' ? `<span class="tag" style="background:#555;border-color:#444;">${t('private')}</span>` : ``}
       </div>
+
       <div class="cell-center">
         <span class="tag">${t('upcoming_tag')}</span>
       </div>
+
       <div class="date-soft" style="white-space:nowrap;">${x.when}</div>
+
       <a class="tag" href="${x.url}" target="_blank" style="justify-self:end;">${t('open')}</a>
     `;
     box.appendChild(el);
@@ -353,6 +384,40 @@ function renderUpcoming(){
   });
 }
 
+/* --------- COPY STREAMKEY --------- */
+function copyStreamKey(key, btn){
+  if(!key) return;
+  const doFallback = () => {
+    const ta = document.createElement('textarea');
+    ta.value = key;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try{ document.execCommand('copy'); }catch(e){}
+    document.body.removeChild(ta);
+  };
+
+  const setLabel = (textKey)=>{
+    if(!btn) return;
+    const orig = btn.getAttribute('data-orig-label') || btn.textContent;
+    if(!btn.getAttribute('data-orig-label')) btn.setAttribute('data-orig-label', orig);
+    btn.textContent = t(textKey);
+    setTimeout(()=>{ btn.textContent = btn.getAttribute('data-orig-label') || orig; }, 1200);
+  };
+
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(key)
+      .then(()=> setLabel('copied'))
+      .catch(()=> { doFallback(); setLabel('copy_error'); });
+  } else {
+    doFallback();
+    setLabel('copied');
+  }
+}
+
+/* --------- STREAMKEYS DU JOUR --------- */
 function renderStreamKeys(){
   const box = document.getElementById('streamKeys');
   if(!box) return;
@@ -361,15 +426,16 @@ function renderStreamKeys(){
   if(!items.length){
     const e = document.createElement('div');
     e.className = 'muted';
-    e.textContent = t('rest');
+    e.textContent = t('no_streamkeys_today');
     box.appendChild(e);
     return;
   }
   items.forEach(it=>{
     const badge = it.status === 'live'
-      ? `<span class="live-pill">LIVE</span>`
-      : `<span class="tag">${t('upcoming_tag')}</span>`;
+      ? `<span class="live-pill">${t('status_live')}</span>`
+      : `<span class="tag">${t('status_upcoming')}</span>`;
     const whenTxt = it.when ? `${fmtDateUTC(it.when)} ${fmtTimeUTC(it.when)}` : '';
+    const safeKey = (it.streamKey || '').replace(/'/g,"\\'");
     const el = document.createElement('div');
     el.className = 'item';
     el.innerHTML = `
@@ -380,38 +446,22 @@ function renderStreamKeys(){
       <div class="cell-center">${badge}</div>
       <div class="date-soft" style="white-space:nowrap;">${whenTxt}</div>
       <div style="display:flex;gap:.4rem;justify-content:flex-end;">
-        <button class="tag js-copy-key" data-key="${it.streamKey}">${it.streamLabel || 'Key'}</button>
+        <button type="button" class="tag" onclick="copyStreamKey('${safeKey}', this)">${it.streamLabel || t('copy')}</button>
         <a class="tag" href="${it.url}" target="_blank">${t('open')}</a>
       </div>
     `;
     box.appendChild(el);
   });
-  box.querySelectorAll('.js-copy-key').forEach(btn=>{
-    btn.addEventListener('click',()=>{
-      const key = btn.getAttribute('data-key') || '';
-      if(!key) return;
-      if(navigator.clipboard && navigator.clipboard.writeText){
-        navigator.clipboard.writeText(key).catch(()=>{});
-      }
-    });
-  });
 }
 
-function renderAll(){
-  renderLive();
-  renderIssues();
-  renderNext90();
-  renderHealth();
-  renderUpcoming();
-  renderStreamKeys();
-}
-
+function renderAll(){renderLive();renderIssues();renderNext90();renderHealth();renderUpcoming();renderStreamKeys();}
 function setLastUpdate(){
   const el=document.getElementById('lastUpdate');
   const d=new Date();
   el.textContent=new Intl.DateTimeFormat(LANG==='fr'?'fr-CH':'en-GB',{timeZone:CH_TZ,hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(d);
 }
 
+/* ---------------- DATA LOADING ---------------- */
 async function fetchJSON(url){const r=await fetch(url,{cache:'no-store'});if(!r.ok)throw new Error('http');return await r.json()}
 
 async function loadCalendars(){
@@ -454,12 +504,14 @@ async function loadStreamKeys(){
   renderStreamKeys();
 }
 
+/* ---------------- UI ---------------- */
 document.getElementById('refreshBtn').addEventListener('click',()=>{loadCalendars();loadYouTube();loadIssues();loadHealth();loadStreamKeys();});
 document.getElementById('prodFilter').addEventListener('change',e=>{state.filterProd=e.target.value;renderUpcoming()});
 document.getElementById('searchInput').addEventListener('input',e=>{state.search=e.target.value;renderUpcoming()});
 document.getElementById('tabRange1').addEventListener('click',()=>{state.activeUpcomingTab='RANGE1';document.getElementById('tabRange1').classList.add('active');document.getElementById('tabRange2').classList.remove('active');renderUpcoming()});
 document.getElementById('tabRange2').addEventListener('click',()=>{state.activeUpcomingTab='RANGE2';document.getElementById('tabRange2').classList.add('active');document.getElementById('tabRange1').classList.remove('active');renderUpcoming()});
 
+/* ---------------- Kickoff ---------------- */
 loadCalendars();
 loadYouTube();
 loadIssues();
