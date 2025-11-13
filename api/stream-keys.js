@@ -64,7 +64,6 @@ async function listStreamsByIds(accessToken, ids) {
   return map;
 }
 
-// yyyy-mm-dd en timezone Europe/Zurich
 function ymdCH(dateISO) {
   const d = new Date(dateISO);
   const parts = new Intl.DateTimeFormat("fr-CH", {
@@ -91,13 +90,10 @@ export default async function handler(req, res) {
 
     for (const b of all) {
       const cd = b.contentDetails || {};
-      const t =
-        cd.actualStartTime ||
-        cd.scheduledStartTime ||
-        b.snippet?.publishedAt;
-      if (!t) continue;
+      const startIso = cd.actualStartTime || cd.scheduledStartTime;
+      if (!startIso) continue;
 
-      const dYmd = ymdCH(t);
+      const dYmd = ymdCH(startIso);
       const st = (b.status?.lifeCycleStatus || "").toLowerCase();
       const privacy = (b.status?.privacyStatus || "").toLowerCase();
 
@@ -105,11 +101,10 @@ export default async function handler(req, res) {
         id: b.id,
         lifeCycleStatus: st,
         privacy,
-        when: t,
+        when: startIso,
         ymd: dYmd
       });
 
-      // on prend seulement les events du jour CH + avec une stream attachée
       if (dYmd !== todayCH) continue;
       if (!cd.boundStreamId) continue;
 
@@ -125,11 +120,7 @@ export default async function handler(req, res) {
       .map(b => {
         const cd = b.contentDetails || {};
         const sid = cd.boundStreamId || null;
-        const t =
-          cd.actualStartTime ||
-          cd.scheduledStartTime ||
-          b.snippet?.publishedAt ||
-          null;
+        const startIso = cd.actualStartTime || cd.scheduledStartTime || null;
         const st = (b.status?.lifeCycleStatus || "").toLowerCase();
         const status = st === "live" ? "live" : "upcoming";
         const privacy = (b.status?.privacyStatus || "").toLowerCase();
@@ -145,7 +136,7 @@ export default async function handler(req, res) {
           id: b.id,
           title: b.snippet?.title || "Live",
           status,
-          when: t,
+          when: startIso,
           streamKey,
           streamLabel,
           streamLabelRaw,
