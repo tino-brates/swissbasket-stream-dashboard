@@ -120,3 +120,36 @@ body {
   color:#aeb8c7;                     /* gris lisible */
   font-variant-numeric:tabular-nums;
 }
+
+/* Bouton "lien" pour le nom cliquable dans Streamkeys */
+.link-like{
+  background:none;
+  border:none;
+  padding:0;
+  margin:0;
+  text-align:left;
+  color:var(--brand);
+  cursor:pointer;
+  font-weight:600;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.link-like:hover{
+  text-decoration:underline;
+}
+
+/* Pills statut streamkey */
+.pill-status{
+  font-size:0.8rem;
+}
+.pill-live{
+  background:#2a1414;
+  border-color:#3b2222;
+  color:#ef8a8a;
+}
+.pill-upcoming{
+  background:#1f2532;
+  border-color:#2b3442;
+  color:#cfe3ff;
+}
