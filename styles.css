@@ -12,9 +12,15 @@
   --good: #06d6a0;
   --none: #8892a6;
 }
+
 * { box-sizing: border-box; }
 html, body { height: 100%; }
-body { margin: 0; background: var(--bg); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+}
 
 .wrap{max-width:1200px;margin:0 auto;padding:16px}
 .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
@@ -31,16 +37,48 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: ui-san
 }
 .lang-btn.active { background:#2a3446; }
 
-.panel{background:var(--panel);border:1px solid #222632;border-radius:14px;padding:12px;margin-bottom:14px}
-.title{color:var(--green);font-size:18px;margin:0 0 10px}
+.panel{
+  background: var(--panel);
+  border: 1px solid #222632;
+  border-radius: 14px;
+  padding: 12px;
+  margin-bottom: 14px;
+}
+
+/* >>> Titres de sections en VERT (comme avant) */
+.title{
+  color: var(--good) !important;
+  font-size: 18px;
+  margin: 0 0 10px;
+}
+
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 @media(max-width:900px){.grid{grid-template-columns:1fr}}
 
 .list{display:flex;flex-direction:column;gap:10px}
-.item{display:grid;grid-template-columns:1.2fr 1fr auto auto;gap:10px;align-items:center;background:#1d212c;border:1px solid #262b37;border-radius:14px;padding:12px}
-.item .tag{background:#1f2733;border:1px solid #2b3442;border-radius:9999px;padding:4px 10px;text-decoration:none;color:#cfe3ff}
-.muted{color:var(--muted)}
 
+/* Ligne générique (4 colonnes) */
+.item{
+  display:grid;
+  grid-template-columns: 1.2fr 1fr auto auto;
+  gap:10px;
+  align-items:center;
+  background:#1d212c;
+  border:1px solid #262b37;
+  border-radius:14px;
+  padding:12px;
+}
+.item .tag{
+  background:#1f2733;
+  border:1px solid #2b3442;
+  border-radius:9999px;
+  padding:4px 10px;
+  text-decoration:none;
+  color:#cfe3ff;
+}
+.muted{color:var(--sub)}
+
+/* Santé YouTube */
 .badge{border-radius:9999px;padding:4px 10px;border:1px solid #2b3442;background:#1f2733}
 .status-perfect{background:#11261c;border-color:#1c3b2b;color:#7ef2b1}
 .status-good{background:#2a2511;border-color:#3b3220;color:#f2c14e}
@@ -52,20 +90,33 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: ui-san
 .tab{background:#1f2532;border:1px solid #2b3442;color:#cfe3ff;border-radius:10px;padding:6px 10px;cursor:pointer}
 .tab.active{background:#263044}
 
+/* Filtres + tableau */
 .filters{display:flex;gap:10px;align-items:center;margin:10px 0}
 .filters select,.filters input{background:#1c222d;border:1px solid #2b3442;color:#e6e7eb;border-radius:10px;padding:8px 10px}
 .table-wrap{overflow:auto;border:1px solid #222632;border-radius:12px}
 
-/* tableau calendrier */
 .table{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
 .table th,.table td{padding:10px 12px;border-bottom:1px solid #232834;text-align:left;white-space:normal;word-break:break-word}
 .table thead th{position:sticky;top:0;background:#1a1f29}
 
-/* badges keemotion */
+/* badges couleurs pour Keemotion */
 .tag-ok{background:rgba(46,160,67,.15);border:1px solid rgba(46,160,67,.35)}
 .tag-warn{background:rgba(242,153,0,.18);border:1px solid rgba(242,153,0,.45)}
 .tag-error{background:rgba(229,83,75,.18);border:1px solid rgba(229,83,75,.45)}
 
-/* pastille & badge LIVE */
+/* Pastille + badge LIVE */
 .live-pill{font-weight:800;letter-spacing:.08em;border:2px solid var(--bad);color:var(--bad);border-radius:9999px;padding:.15rem .6rem;white-space:nowrap;}
 .dot-live{display:inline-block;width:.6rem;height:.6rem;border-radius:9999px;background:var(--bad);box-shadow:0 0 0 2px rgba(255,95,95,.18);margin-right:.4rem;}
+
+/* Centrage cellule du badge (si besoin ailleurs) */
+.cell-center{justify-self:center;text-align:center}
+
+/* UPCOMING lisible (grisé mais pas délavé) */
+.upcoming-item{
+  background:#1a1f29;               /* fond légèrement plus sombre */
+  border-color:#232a36;
+}
+.upcoming-item .date-soft{
+  color:#aeb8c7;                     /* gris lisible */
+  font-variant-numeric:tabular-nums;
+}

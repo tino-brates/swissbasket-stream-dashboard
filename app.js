@@ -1,5 +1,5 @@
 // ------------------------------------------------------
-// Dashboard SwissBasket — FR/EN toggle + fuseau CH
+// Dashboard SwissBasket — FR/EN + mise en page “UPCOMING” lisible
 // ------------------------------------------------------
 
 /* ---------------- I18N ---------------- */
@@ -61,26 +61,24 @@ function t(key){ return (I18N[LANG] && I18N[LANG][key]) || I18N.fr[key] || key; 
 
 function applyI18n(){
   document.documentElement.lang = LANG;
-  // data-i18n → innerText
   document.querySelectorAll("[data-i18n]").forEach(el=>{
     const k = el.getAttribute("data-i18n");
     el.textContent = t(k);
   });
-  // placeholders
   document.querySelectorAll("[data-i18n-ph]").forEach(el=>{
     const k = el.getAttribute("data-i18n-ph");
     el.setAttribute("placeholder", t(k));
   });
-  // bouton actif
   document.querySelectorAll(".lang-btn").forEach(b=>{
     b.classList.toggle("active", b.dataset.lang===LANG);
   });
 }
 
-// écouteurs langue
 window.addEventListener("DOMContentLoaded", ()=>{
-  document.getElementById("langFr").addEventListener("click",()=>{ LANG="fr"; localStorage.setItem("LANG","fr"); applyI18n(); renderAll(); });
-  document.getElementById("langEn").addEventListener("click",()=>{ LANG="en"; localStorage.setItem("LANG","en"); applyI18n(); renderAll(); });
+  const fr = document.getElementById("langFr");
+  const en = document.getElementById("langEn");
+  if (fr) fr.addEventListener("click",()=>{ LANG="fr"; localStorage.setItem("LANG","fr"); applyI18n(); renderAll(); });
+  if (en) en.addEventListener("click",()=>{ LANG="en"; localStorage.setItem("LANG","en"); applyI18n(); renderAll(); });
   applyI18n();
 });
 
@@ -192,6 +190,7 @@ function badgeForIssue(s){const map={sufficient:'tag-ok',insufficient:'tag-warn'
 function renderLive(){
   const box=document.getElementById('liveNow');box.innerHTML='';
 
+  // === LIVES ===
   if(state.data.live.length){
     state.data.live.forEach(x=>{
       const isPriv = (x.visibility||"").toLowerCase()==="private";
@@ -200,48 +199,65 @@ function renderLive(){
 
       const el=document.createElement('div');el.className='item';
       el.innerHTML=`
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
-          <div style="display:flex;align-items:center;gap:.6rem;min-width:0;flex:1;">
-            <span class="dot-live"></span>
-            <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.title}</div>
-            <span class="muted" style="font-variant-numeric:tabular-nums;">${timer}</span>
-            ${isPriv?`<span class="tag" style="background:#555;border-color:#444;">${t('private')}</span>`:""}
-          </div>
-          <div style="display:flex;align-items:center;gap:.6rem;flex:0 0 auto;">
-            <span class="live-pill">LIVE${isPreview?' (preview)':''}</span>
-            <a class="tag" href="${x.url}" target="_blank" style="flex:0 0 auto;">${t('open')}</a>
-          </div>
-        </div>`;
+        <!-- Col 1 : pastille + titre + minuteur -->
+        <div style="display:flex;align-items:center;gap:.6rem;min-width:0;">
+          <span class="dot-live"></span>
+          <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.title}</div>
+          <span class="muted" style="font-variant-numeric:tabular-nums;">${timer}</span>
+          ${isPriv?`<span class="tag" style="background:#555;border-color:#444;">${t('private')}</span>`:""}
+        </div>
+
+        <!-- Col 2 : badge LIVE (aligné au centre de sa cellule par défaut avec le grid) -->
+        <div class="cell-center">
+          <span class="live-pill">LIVE${isPreview?' (preview)':''}</span>
+        </div>
+
+        <!-- Col 3 : (vide, réservé) -->
+        <div></div>
+
+        <!-- Col 4 : lien -->
+        <a class="tag" href="${x.url}" target="_blank" style="justify-self:end;">${t('open')}</a>
+      `;
       box.appendChild(el);
     });
     return;
   }
 
+  // === UPCOMING (fallback) — GRISÉ MAIS LISIBLE ===
   let next3=(state.data.ytUpcoming||[])
     .filter(x=>x.scheduledStart?isInFutureUTC(x.scheduledStart):true)
     .sort((a,b)=>parseUTCDate(a.scheduledStart)-parseUTCDate(b.scheduledStart))
     .slice(0,3)
-    .map(x=>({title:x.title, when:`${fmtDateUTC(x.scheduledStart)} ${fmtTimeUTC(x.scheduledStart)}`, url:x.url, tag:t('upcoming_tag'), visibility:x.visibility||''}));
+    .map(x=>({
+      title:x.title,
+      when:`${fmtDateUTC(x.scheduledStart)} ${fmtTimeUTC(x.scheduledStart)}`,
+      url:x.url,
+      visibility:x.visibility||''
+    }));
 
   if(next3.length===0){return}
+
   next3.forEach(x=>{
     const el=document.createElement('div');
-    el.className='item';
-    el.setAttribute('style','position:relative;opacity:.45;');
+    el.className='item upcoming-item';
     el.innerHTML=`
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
-        <div style="display:flex;align-items:center;gap:.6rem;min-width:0;flex:1;">
-          <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.title}</div>
-          ${x.visibility && x.visibility.toLowerCase()==='private' ? `<span class="tag" style="background:#555;border-color:#444;">${t('private')}</span>` : ``}
-        </div>
-        <div style="display:flex;align-items:center;gap:.6rem;flex:0 0 auto;">
-          <span class="muted" style="white-space:nowrap;">${x.when}</span>
-          ${x.url?`<a class="tag" href="${x.url}" target="_blank">${t('open')}</a>`:`<span class="tag">${x.tag}</span>`}
-        </div>
+      <!-- Col 1 : titre (+ privé si besoin) -->
+      <div style="display:flex;align-items:center;gap:.6rem;min-width:0;">
+        <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.title}</div>
+        ${x.visibility && x.visibility.toLowerCase()==='private' ? `<span class="tag" style="background:#555;border-color:#444;">${t('private')}</span>` : ``}
       </div>
-      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">
-        <span style="font-weight:700;letter-spacing:.1em;border:1px solid currentColor;border-radius:9999px;padding:.2rem .6rem;opacity:.9;">${t('upcoming_tag')}</span>
-      </div>`;
+
+      <!-- Col 2 : badge UPCOMING (centré) -->
+      <div class="cell-center">
+        <span class="tag">${t('upcoming_tag')}</span>
+      </div>
+
+      <!-- Col 3 : date/heure grisée bien lisible -->
+      <div class="date-soft" style="white-space:nowrap;">${x.when}</div>
+
+      <!-- Col 4 : lien à l’extrême droite -->
+      <a class="tag" href="${x.url}" target="_blank" style="justify-self:end;">${t('open')}</a>
+    `;
     box.appendChild(el);
   });
 }
@@ -282,7 +298,7 @@ function renderNext90(){
       <div style="font-weight:600;">${x.title}</div>
       <div></div>
       <div>${x.time}</div>
-      ${x.url?`<a class="tag" href="${x.url}" target="_blank">${t('open')}</a>`:''}`;
+      ${x.url?`<a class="tag" href="${x.url}" target="_blank" style="justify-self:end;">${t('open')}</a>`:''}`;
     box.appendChild(el);
   });
 }
