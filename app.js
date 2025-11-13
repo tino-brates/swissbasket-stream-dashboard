@@ -2,7 +2,6 @@
 // Dashboard SwissBasket — FR/EN + mise en page “UPCOMING” lisible
 // ------------------------------------------------------
 
-/* ---------------- I18N ---------------- */
 const I18N = {
   fr: {
     title: "SwissBasket Streaming",
@@ -96,7 +95,6 @@ window.addEventListener("DOMContentLoaded", ()=>{
   applyI18n();
 });
 
-/* -------------- ÉTAT GLOBAL -------------- */
 const state = {
   filterProd: 'ALL',
   search: '',
@@ -112,7 +110,6 @@ const state = {
   }
 };
 
-// ---------- Helpers fuseau horaire Europe/Zurich ----------
 const CH_TZ = 'Europe/Zurich';
 
 function parseSheetDate(input) {
@@ -146,19 +143,16 @@ function withinNextMinutesSheet(d, min) {
   const now = nowMs();
   return t >= now && t <= now + min * 60000;
 }
-function isInFutureSheet(d) { return parseSheetDate(d).getTime() >= nowMs(); }
 function withinNextMinutesUTC(d, min) {
   const t = parseUTCDate(d).getTime();
   const now = nowMs();
   return t >= now && t <= now + min * 60000;
 }
-function isInFutureUTC(d) { return parseUTCDate(d).getTime() >= nowMs(); }
 
-// Semaine
 function startOfWeekMonday(dt) {
   const d = parseSheetDate(dt ?? new Date());
   const base = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const day = (base.getDay() + 6) % 7; // 0=lundi
+  const day = (base.getDay() + 6) % 7;
   base.setDate(base.getDate() - day);
   base.setHours(0, 0, 0, 0);
   return base;
@@ -179,7 +173,6 @@ function endOfNextWeekSunday(dt) {
   return e;
 }
 
-// Mini helpers
 function pad2(n){return n<10?`0${n}`:`${n}`;}
 function elapsedHM(start){
   if(!start) return "";
@@ -201,11 +194,9 @@ function prodGroup(p){if(p==='Swish Live'||p==='Manual')return'SwishManual';retu
 function badgeForStatus(s){const map={perfect:'status-perfect',good:'status-good',bad:'status-bad',nodata:'status-nodata'};return map[s]||'status-nodata';}
 function badgeForIssue(s){const map={sufficient:'tag-ok',insufficient:'tag-warn',offline:'tag-error',unknown:'tag-warn'};return map[s]||'tag-warn';}
 
-/* ---------------- RENDERERS ---------------- */
 function renderLive(){
   const box=document.getElementById('liveNow');box.innerHTML='';
 
-  // === LIVES ===
   if(state.data.live.length){
     state.data.live.forEach(x=>{
       const isPriv = (x.visibility||"").toLowerCase()==="private";
@@ -214,23 +205,16 @@ function renderLive(){
 
       const el=document.createElement('div');el.className='item';
       el.innerHTML=`
-        <!-- Col 1 : pastille + titre + minuteur -->
         <div style="display:flex;align-items:center;gap:.6rem;min-width:0;">
           <span class="dot-live"></span>
           <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.title}</div>
           <span class="muted" style="font-variant-numeric:tabular-nums;">${timer}</span>
           ${isPriv?`<span class="tag" style="background:#555;border-color:#444;">${t('private')}</span>`:""}
         </div>
-
-        <!-- Col 2 : badge LIVE -->
         <div class="cell-center">
           <span class="live-pill">LIVE${isPreview?' (preview)':''}</span>
         </div>
-
-        <!-- Col 3 : (vide, réservé) -->
         <div></div>
-
-        <!-- Col 4 : lien -->
         <a class="tag" href="${x.url}" target="_blank" style="justify-self:end;">${t('open')}</a>
       `;
       box.appendChild(el);
@@ -238,9 +222,8 @@ function renderLive(){
     return;
   }
 
-  // === UPCOMING (fallback) — GRISÉ MAIS LISIBLE ===
   let next3=(state.data.ytUpcoming||[])
-    .filter(x=>x.scheduledStart?isInFutureUTC(x.scheduledStart):true)
+    .filter(x=>x.scheduledStart?parseUTCDate(x.scheduledStart).getTime()>=nowMs():true)
     .sort((a,b)=>parseUTCDate(a.scheduledStart)-parseUTCDate(b.scheduledStart))
     .slice(0,3)
     .map(x=>({
@@ -256,21 +239,14 @@ function renderLive(){
     const el=document.createElement('div');
     el.className='item upcoming-item';
     el.innerHTML=`
-      <!-- Col 1 : titre (+ privé si besoin) -->
       <div style="display:flex;align-items:center;gap:.6rem;min-width:0;">
         <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.title}</div>
         ${x.visibility && x.visibility.toLowerCase()==='private' ? `<span class="tag" style="background:#555;border-color:#444;">${t('private')}</span>` : ``}
       </div>
-
-      <!-- Col 2 : badge UPCOMING (centré) -->
       <div class="cell-center">
         <span class="tag">${t('upcoming_tag')}</span>
       </div>
-
-      <!-- Col 3 : date/heure -->
       <div class="date-soft" style="white-space:nowrap;">${x.when}</div>
-
-      <!-- Col 4 : lien -->
       <a class="tag" href="${x.url}" target="_blank" style="justify-self:end;">${t('open')}</a>
     `;
     box.appendChild(el);
@@ -368,33 +344,22 @@ function renderStreamKeys(){
     const statusLabelTxt = item.status === 'live' ? t('status_live') : t('status_upcoming');
     const timeLabel = item.when ? fmtTimeUTC(item.when) : '';
     const streamKey = item.streamKey || '';
+    const label = item.streamLabel || t('copy');
 
     const el = document.createElement('div');
     el.className = 'item';
     el.innerHTML = `
-      <!-- Col 1 : Titre + bouton copie + key -->
       <div style="display:flex;flex-direction:column;gap:4px;min-width:0;">
-        <button class="link-like" data-streamkey="${streamKey}">
-          ${item.title}
-        </button>
-        <div class="muted" style="font-size:.85em;word-break:break-all;">
-          ${streamKey}
-        </div>
+        <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.title}</div>
       </div>
-
-      <!-- Col 2 : statut LIVE / UPCOMING -->
       <div class="cell-center">
-        <span class="badge pill-status ${item.status === 'live' ? 'pill-live' : 'pill-upcoming'}">
-          ${statusLabelTxt}
-        </span>
+        <button class="link-like streamkey-btn" data-streamkey="${streamKey}">
+          ${label}
+        </button>
       </div>
-
-      <!-- Col 3 : heure -->
       <div class="muted" style="white-space:nowrap;">
         ${timeLabel}
       </div>
-
-      <!-- Col 4 : lien YouTube -->
       <a class="tag" href="${item.url}" target="_blank" style="justify-self:end;">
         ${t('open')}
       </a>
@@ -402,7 +367,7 @@ function renderStreamKeys(){
     box.appendChild(el);
   });
 
-  box.querySelectorAll('.link-like').forEach(btn=>{
+  box.querySelectorAll('.streamkey-btn').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
       const sk = btn.getAttribute('data-streamkey') || '';
       if (!sk) return;
@@ -500,7 +465,6 @@ function setLastUpdate(){
   ).format(d);
 }
 
-/* ---------------- DATA LOADING ---------------- */
 async function fetchJSON(url){
   const r=await fetch(url,{cache:'no-store'});
   if(!r.ok)throw new Error('http');
@@ -551,7 +515,6 @@ async function loadStreamKeys(){
   renderStreamKeys();
 }
 
-/* ---------------- UI ---------------- */
 document.getElementById('refreshBtn').addEventListener('click',()=>{
   loadCalendars();
   loadYouTube();
@@ -580,7 +543,6 @@ document.getElementById('tabRange2').addEventListener('click',()=>{
   renderUpcoming();
 });
 
-/* ---------------- Kickoff ---------------- */
 loadCalendars();
 loadYouTube();
 loadIssues();

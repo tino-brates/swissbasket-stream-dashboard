@@ -34,7 +34,6 @@ async function getAccessToken() {
   return j.access_token;
 }
 
-// liste tous les broadcasts du compte (mine=true)
 async function listAllBroadcasts(accessToken) {
   const u = new URL(YT_BROADCASTS);
   u.searchParams.set("part", "id,snippet,contentDetails,status");
@@ -65,7 +64,6 @@ async function listStreamsByIds(accessToken, ids) {
   return map;
 }
 
-// yyyy-mm-dd en timezone Europe/Zurich
 function ymdCH(dateISO) {
   const d = new Date(dateISO);
   const parts = new Intl.DateTimeFormat("fr-CH", {
@@ -119,12 +117,18 @@ export default async function handler(req, res) {
       const stream = sid ? streamsMap.get(sid) : null;
       const ingest = stream?.cdn?.ingestionInfo || {};
       const streamKey = ingest.streamName || "";
+      const streamLabelRaw = stream?.snippet?.title || "";
+      let streamLabel = streamLabelRaw;
+      const idx = streamLabelRaw.indexOf("(");
+      if (idx > 0) streamLabel = streamLabelRaw.slice(0, idx).trim();
       return {
         id: b.id,
         title: b.snippet?.title || "Live",
         status,
         when: t,
         streamKey,
+        streamLabel,
+        streamLabelRaw,
         url: `https://www.youtube.com/watch?v=${b.id}`
       };
     });
