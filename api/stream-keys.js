@@ -64,6 +64,7 @@ async function listStreamsByIds(accessToken, ids) {
   return map;
 }
 
+// yyyy-mm-dd en timezone Europe/Zurich
 function ymdCH(dateISO) {
   const d = new Date(dateISO);
   const parts = new Intl.DateTimeFormat("fr-CH", {
@@ -78,39 +79,25 @@ function ymdCH(dateISO) {
   return `${y}-${m}-${da}`;
 }
 
-function hmCH(dateISO) {
-  const d = new Date(dateISO);
-  const parts = new Intl.DateTimeFormat("fr-CH", {
-    timeZone: "Europe/Zurich",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false
-  }).formatToParts(d);
-  const h = parseInt(parts.find(p => p.type === "hour").value, 10);
-  const m = parseInt(parts.find(p => p.type === "minute").value, 10);
-  return h * 60 + m;
-}
-
 export default async function handler(req, res) {
   const debugFlag = req.query.debug === "1" || req.query.debug === "true";
   try {
     const access = await getAccessToken();
     const all = await listAllBroadcasts(access);
 
-    const now = Date.now();
-    const todayCH = ymdCH(now);
-    const nowHmCH = hmCH(now);
-
+    const todayCH = ymdCH(Date.now());
     const todayItems = [];
     const debugDates = [];
 
     for (const b of all) {
       const cd = b.contentDetails || {};
-      const t = cd.actualStartTime || cd.scheduledStartTime || b.snippet?.publishedAt;
+      const t =
+        cd.actualStartTime ||
+        cd.scheduledStartTime ||
+        b.snippet?.publishedAt;
       if (!t) continue;
 
       const dYmd = ymdCH(t);
-      const hm = hmCH(t);
       const st = (b.status?.lifeCycleStatus || "").toLowerCase();
       const privacy = (b.status?.privacyStatus || "").toLowerCase();
 
@@ -119,12 +106,11 @@ export default async function handler(req, res) {
         lifeCycleStatus: st,
         privacy,
         when: t,
-        ymd: dYmd,
-        hmCH: hm
+        ymd: dYmd
       });
 
+      // on prend seulement les events du jour CH + avec une stream attachée
       if (dYmd !== todayCH) continue;
-      if (hm < nowHmCH) continue;
       if (!cd.boundStreamId) continue;
 
       todayItems.push(b);
@@ -135,40 +121,45 @@ export default async function handler(req, res) {
       .filter(Boolean);
     const streamsMap = await listStreamsByIds(access, streamIds);
 
-    const items = todayItems.map(b => {
-      const cd = b.contentDetails || {};
-      const sid = cd.boundStreamId || null;
-      const t = cd.actualStartTime || cd.scheduledStartTime || b.snippet?.publishedAt || null;
-      const st = (b.status?.lifeCycleStatus || "").toLowerCase();
-      const status = st === "live" ? "live" : "upcoming";
-      const privacy = (b.status?.privacyStatus || "").toLowerCase();
-      const stream = sid ? streamsMap.get(sid) : null;
-      const ingest = stream?.cdn?.ingestionInfo || {};
-      const streamKey = ingest.streamName || "";
-      const streamLabelRaw = stream?.snippet?.title || "";
-      let streamLabel = streamLabelRaw;
-      const idx = streamLabelRaw.indexOf("(");
-      if (idx > 0) streamLabel = streamLabelRaw.slice(0, idx).trim();
+    const items = todayItems
+      .map(b => {
+        const cd = b.contentDetails || {};
+        const sid = cd.boundStreamId || null;
+        const t =
+          cd.actualStartTime ||
+          cd.scheduledStartTime ||
+          b.snippet?.publishedAt ||
+          null;
+        const st = (b.status?.lifeCycleStatus || "").toLowerCase();
+        const status = st === "live" ? "live" : "upcoming";
+        const privacy = (b.status?.privacyStatus || "").toLowerCase();
+        const stream = sid ? streamsMap.get(sid) : null;
+        const ingest = stream?.cdn?.ingestionInfo || {};
+        const streamKey = ingest.streamName || "";
+        const streamLabelRaw = stream?.snippet?.title || "";
+        let streamLabel = streamLabelRaw;
+        const idx = streamLabelRaw.indexOf("(");
+        if (idx > 0) streamLabel = streamLabelRaw.slice(0, idx).trim();
 
-      return {
-        id: b.id,
-        title: b.snippet?.title || "Live",
-        status,
-        when: t,
-        streamKey,
-        streamLabel,
-        streamLabelRaw,
-        privacy,
-        url: `https://www.youtube.com/watch?v=${b.id}`
-      };
-    }).sort((a, b) => new Date(a.when) - new Date(b.when));
+        return {
+          id: b.id,
+          title: b.snippet?.title || "Live",
+          status,
+          when: t,
+          streamKey,
+          streamLabel,
+          streamLabelRaw,
+          privacy,
+          url: `https://www.youtube.com/watch?v=${b.id}`
+        };
+      })
+      .sort((a, b) => new Date(a.when) - new Date(b.when));
 
     const payload = { items };
     if (debugFlag) {
       payload.debug = {
         totalBroadcasts: all.length,
         todayCH,
-        nowHmCH,
         matched: items.length,
         rawDates: debugDates
       };
