@@ -45,7 +45,7 @@ body {
   margin-bottom: 14px;
 }
 
-/* >>> Titres de sections en VERT (comme avant) */
+/* Titres de sections en vert */
 .title{
   color: var(--good) !important;
   font-size: 18px;
@@ -79,7 +79,12 @@ body {
 .muted{color:var(--sub)}
 
 /* Santé YouTube */
-.badge{border-radius:9999px;padding:4px 10px;border:1px solid #2b3442;background:#1f2733}
+.badge{
+  border-radius:9999px;
+  padding:4px 10px;
+  border:1px solid #2b3442;
+  background:#1f2733;
+}
 .status-perfect{background:#11261c;border-color:#1c3b2b;color:#7ef2b1}
 .status-good{background:#2a2511;border-color:#3b3220;color:#f2c14e}
 .status-bad{background:#2a1414;border-color:#3b2222;color:#ef8a8a}
@@ -87,17 +92,42 @@ body {
 
 .upcoming-head{display:flex;justify-content:space-between;align-items:center;gap:12px}
 .tabs{display:flex;gap:8px}
-.tab{background:#1f2532;border:1px solid #2b3442;color:#cfe3ff;border-radius:10px;padding:6px 10px;cursor:pointer}
+.tab{
+  background:#1f2532;
+  border:1px solid #2b3442;
+  color:#cfe3ff;
+  border-radius:10px;
+  padding:6px 10px;
+  cursor:pointer
+}
 .tab.active{background:#263044}
 
 /* Filtres + tableau */
 .filters{display:flex;gap:10px;align-items:center;margin:10px 0}
-.filters select,.filters input{background:#1c222d;border:1px solid #2b3442;color:#e6e7eb;border-radius:10px;padding:8px 10px}
+.filters select,
+.filters input{
+  background:#1c222d;
+  border:1px solid #2b3442;
+  color:#e6e7eb;
+  border-radius:10px;
+  padding:8px 10px;
+}
 .table-wrap{overflow:auto;border:1px solid #222632;border-radius:12px}
 
 .table{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
-.table th,.table td{padding:10px 12px;border-bottom:1px solid #232834;text-align:left;white-space:normal;word-break:break-word}
-.table thead th{position:sticky;top:0;background:#1a1f29}
+.table th,
+.table td{
+  padding:10px 12px;
+  border-bottom:1px solid #232834;
+  text-align:left;
+  white-space:normal;
+  word-break:break-word
+}
+.table thead th{
+  position:sticky;
+  top:0;
+  background:#1a1f29
+}
 
 /* badges couleurs pour Keemotion */
 .tag-ok{background:rgba(46,160,67,.15);border:1px solid rgba(46,160,67,.35)}
@@ -105,19 +135,38 @@ body {
 .tag-error{background:rgba(229,83,75,.18);border:1px solid rgba(229,83,75,.45)}
 
 /* Pastille + badge LIVE */
-.live-pill{font-weight:800;letter-spacing:.08em;border:2px solid var(--bad);color:var(--bad);border-radius:9999px;padding:.15rem .6rem;white-space:nowrap;}
-.dot-live{display:inline-block;width:.6rem;height:.6rem;border-radius:9999px;background:var(--bad);box-shadow:0 0 0 2px rgba(255,95,95,.18);margin-right:.4rem;}
+.live-pill{
+  font-weight:800;
+  letter-spacing:.08em;
+  border:2px solid var(--bad);
+  color:var(--bad);
+  border-radius:9999px;
+  padding:.15rem .6rem;
+  white-space:nowrap;
+}
+.dot-live{
+  display:inline-block;
+  width:.6rem;
+  height:.6rem;
+  border-radius:9999px;
+  background:var(--bad);
+  box-shadow:0 0 0 2px rgba(255,95,95,.18);
+  margin-right:.4rem;
+}
 
-/* Centrage cellule du badge (si besoin ailleurs) */
-.cell-center{justify-self:center;text-align:center}
+/* Centrage cellule du badge */
+.cell-center{
+  justify-self:center;
+  text-align:center;
+}
 
 /* UPCOMING lisible (grisé mais pas délavé) */
 .upcoming-item{
-  background:#1a1f29;               /* fond légèrement plus sombre */
+  background:#1a1f29;
   border-color:#232a36;
 }
 .upcoming-item .date-soft{
-  color:#aeb8c7;                     /* gris lisible */
+  color:#aeb8c7;
   font-variant-numeric:tabular-nums;
 }
 
