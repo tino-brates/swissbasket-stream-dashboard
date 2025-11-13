@@ -549,15 +549,38 @@ async function loadCalendars(){
   renderUpcoming(); setLastUpdate();
 }
 
+/* 🔧 FIX ICI : on récupère /api/live + /api/yt-upcoming, avec fallback */
 async function loadYouTube(){
-  let payload = await fetchJSON('/api/live').catch(()=>({live:[], upcoming:[], meta:{source:'err', lastError:'fetch /api/live'}}));
+  let payload = await fetchJSON('/api/live').catch(()=>({
+    live:[],
+    upcoming:[],
+    meta:{source:'err', lastError:'fetch /api/live'}
+  }));
+
   if ((!payload.live || payload.live.length===0) && (!payload.upcoming || payload.upcoming.length===0)) {
     const atom = await fetchJSON('/api/live-feed').catch(()=>({live:[],upcoming:[],source:'atom-err'}));
-    payload = { live: atom.live||[], upcoming: atom.upcoming||[], meta: { source: atom.source||'atom', lastError:'' } };
+    payload = {
+      live: atom.live||[],
+      upcoming: atom.upcoming||[],
+      meta: { source: atom.source||'atom', lastError:'' }
+    };
   }
+
   state.data.live = payload.live || [];
-  state.data.ytUpcoming = payload.upcoming || [];
   state.data.ytMeta = payload.meta || { source:'', quotaBackoffUntil:0, lastError:'' };
+
+  let ytUp = { items: [] };
+  try {
+    ytUp = await fetchJSON('/api/yt-upcoming');
+  } catch(e) {
+    ytUp = { items: [] };
+  }
+
+  if (ytUp.items && ytUp.items.length) {
+    state.data.ytUpcoming = ytUp.items.map(x => ({ ...x }));
+  } else {
+    state.data.ytUpcoming = payload.upcoming || [];
+  }
 
   renderLive();
   renderNext90();
