@@ -89,16 +89,24 @@ export default async function handler(req, res) {
     const debugDates = [];
 
     for (const b of all) {
-      const st = (b.status?.lifeCycleStatus || "").toLowerCase();
-      if (st !== "live" && st !== "upcoming") continue;
-
       const cd = b.contentDetails || {};
       const t = cd.actualStartTime || cd.scheduledStartTime || b.snippet?.publishedAt;
       if (!t) continue;
 
       const dYmd = ymdCH(t);
-      debugDates.push({ id: b.id, status: st, when: t, ymd: dYmd });
+      const st = (b.status?.lifeCycleStatus || "").toLowerCase();
+      const privacy = (b.status?.privacyStatus || "").toLowerCase();
+
+      debugDates.push({
+        id: b.id,
+        lifeCycleStatus: st,
+        privacy,
+        when: t,
+        ymd: dYmd
+      });
+
       if (dYmd !== todayCH) continue;
+      if (!cd.boundStreamId) continue;
 
       todayItems.push(b);
     }
@@ -114,6 +122,7 @@ export default async function handler(req, res) {
       const t = cd.actualStartTime || cd.scheduledStartTime || b.snippet?.publishedAt || null;
       const st = (b.status?.lifeCycleStatus || "").toLowerCase();
       const status = st === "live" ? "live" : "upcoming";
+      const privacy = (b.status?.privacyStatus || "").toLowerCase();
       const stream = sid ? streamsMap.get(sid) : null;
       const ingest = stream?.cdn?.ingestionInfo || {};
       const streamKey = ingest.streamName || "";
@@ -121,6 +130,7 @@ export default async function handler(req, res) {
       let streamLabel = streamLabelRaw;
       const idx = streamLabelRaw.indexOf("(");
       if (idx > 0) streamLabel = streamLabelRaw.slice(0, idx).trim();
+
       return {
         id: b.id,
         title: b.snippet?.title || "Live",
@@ -129,6 +139,7 @@ export default async function handler(req, res) {
         streamKey,
         streamLabel,
         streamLabelRaw,
+        privacy,
         url: `https://www.youtube.com/watch?v=${b.id}`
       };
     });
