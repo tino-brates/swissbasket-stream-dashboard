@@ -30,11 +30,11 @@ async function getAccessToken() {
     body
   });
   const j = await r.json();
-  if (!r.ok || !j.access_token) throw new Error("token");
+  if (!r.ok || !j.access_token) throw new Error(`token(${r.status})`);
   return j.access_token;
 }
 
-async function listAllBroadcasts(accessToken, debug) {
+async function listAllBroadcasts(accessToken) {
   const u = new URL(YT_BROADCASTS);
   u.searchParams.set("part", "id,snippet,contentDetails,status");
   u.searchParams.set("mine", "true");
@@ -43,17 +43,8 @@ async function listAllBroadcasts(accessToken, debug) {
     headers: { Authorization: `Bearer ${accessToken}` }
   });
   const text = await r.text();
-  if (!r.ok) {
-    if (debug) throw new Error(`liveBroadcasts(${r.status}): ${text.slice(0,400)}`);
-    throw new Error("liveBroadcasts");
-  }
-  let j;
-  try {
-    j = JSON.parse(text);
-  } catch {
-    if (debug) throw new Error(`liveBroadcasts(json): ${text.slice(0,200)}`);
-    throw new Error("liveBroadcasts json");
-  }
+  if (!r.ok) throw new Error(`liveBroadcasts(${r.status}): ${text.slice(0, 200)}`);
+  const j = JSON.parse(text);
   return j.items || [];
 }
 
@@ -65,57 +56,119 @@ async function listStreamsByIds(accessToken, ids) {
   const r = await fetch(u.toString(), {
     headers: { Authorization: `Bearer ${accessToken}` }
   });
-  if (!r.ok) return new Map();
-  const j = await r.json();
+  const text = await r.text();
+  if (!r.ok) throw new Error(`liveStreams(${r.status}): ${text.slice(0, 200)}`);
+  const j = JSON.parse(text);
   const map = new Map();
   (j.items || []).forEach(s => map.set(s.id, s));
   return map;
 }
 
-const lc = s => (s || "").toLowerCase();
+function ymdCH(dateISO) {
+  const d = new Date(dateISO);
+  const parts = new Intl.DateTimeFormat("fr-CH", {
+    timeZone: "Europe/Zurich",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(d);
+  const y = parts.find(p => p.type === "year").value;
+  const m = parts.find(p => p.type === "month").value;
+  const da = parts.find(p => p.type === "day").value;
+  return `${y}-${m}-${da}`;
+}
 
 export default async function handler(req, res) {
   const debugFlag = req.query.debug === "1" || req.query.debug === "true";
+
   try {
     const access = await getAccessToken();
+    const all = await listAllBroadcasts(access);
 
-    const broadcasts = await listAllBroadcasts(access, debugFlag);
+    const nowMs = Date.now();
+    const todayCH = ymdCH(nowMs);
+    const todayBroadcasts = [];
+    const debugDates = [];
 
-    const relevant = (broadcasts || []).filter(b => {
-      const ls = lc(b?.status?.lifeCycleStatus);
-      return ls === "live" || ls === "upcoming";
-    });
+    for (const b of all) {
+      const sn = b.snippet || {};
+      const cd = b.contentDetails || {};
+      const st = (b.status?.lifeCycleStatus || "").toLowerCase();
+      const privacy = (b.status?.privacyStatus || "").toLowerCase();
+      const isLive = st === "live";
 
-    const ids = relevant
+      const scheduled = sn.scheduledStartTime || null;
+
+      if (scheduled) {
+        const schedMs = Date.parse(scheduled);
+        const dYmd = ymdCH(scheduled);
+        debugDates.push({
+          id: b.id,
+          lifeCycleStatus: st,
+          privacy,
+          scheduled,
+          ymd: dYmd,
+          schedMs
+        });
+        if (dYmd !== todayCH) continue;
+        if (!Number.isNaN(schedMs) && schedMs < nowMs && !isLive) continue;
+      } else {
+        debugDates.push({
+          id: b.id,
+          lifeCycleStatus: st,
+          privacy,
+          scheduled: null,
+          ymd: null,
+          schedMs: null
+        });
+        if (!isLive) continue;
+      }
+
+      if (!cd.boundStreamId) continue;
+      todayBroadcasts.push(b);
+    }
+
+    const streamIds = todayBroadcasts
       .map(b => (b.contentDetails || {}).boundStreamId)
       .filter(Boolean);
-    const streamsMap = await listStreamsByIds(access, ids);
 
-    const items = relevant
+    const streamsMap = await listStreamsByIds(access, [...new Set(streamIds)]);
+
+    const items = todayBroadcasts
       .map(b => {
+        const sn = b.snippet || {};
         const cd = b.contentDetails || {};
+        const st = (b.status?.lifeCycleStatus || "").toLowerCase();
+        const status = st === "live" ? "live" : "upcoming";
+        const privacy = (b.status?.privacyStatus || "").toLowerCase();
+
+        const scheduled = sn.scheduledStartTime || null;
+        const when = scheduled || sn.publishedAt || null;
+
         const sid = cd.boundStreamId || null;
         const stream = sid ? streamsMap.get(sid) : null;
-        const ingest = (stream?.cdn?.ingestionInfo) || {};
+        const ingest = stream?.cdn?.ingestionInfo || {};
         const streamKey = ingest.streamName || "";
-        const when = cd.actualStartTime || cd.scheduledStartTime || b.snippet?.publishedAt || null;
-        const status = lc(b?.status?.lifeCycleStatus) === "live" ? "live" : "upcoming";
-        const rawLabel = (stream?.snippet?.title || "").trim();
-        const streamLabelRaw = rawLabel || "";
-        const streamLabel = streamLabelRaw || streamKey || "";
+        if (!streamKey) return null;
+
+        const streamLabelRaw = stream?.snippet?.title || "";
+        let streamLabel = streamLabelRaw;
+        const idx = streamLabelRaw.indexOf("(");
+        if (idx > 0) streamLabel = streamLabelRaw.slice(0, idx).trim();
 
         return {
           id: b.id,
-          title: b.snippet?.title || "Live",
+          title: sn.title || "Live",
           status,
           when,
           streamKey,
           streamLabel,
           streamLabelRaw,
-          privacy: b.status?.privacyStatus || "public",
+          privacy,
           url: `https://www.youtube.com/watch?v=${b.id}`
         };
       })
+      .filter(Boolean)
       .sort((a, b) => {
         const ta = a.when ? new Date(a.when).getTime() : 0;
         const tb = b.when ? new Date(b.when).getTime() : 0;
@@ -125,13 +178,18 @@ export default async function handler(req, res) {
     const payload = { items };
     if (debugFlag) {
       payload.debug = {
-        totalBroadcasts: broadcasts.length,
-        relevantCount: relevant.length
+        totalBroadcasts: all.length,
+        todayCH,
+        matched: items.length,
+        rawDates: debugDates
       };
     }
 
     res.status(200).json(payload);
   } catch (e) {
-    res.status(200).json({ items: [], error: String(e) });
+    res.status(200).json({
+      items: [],
+      error: String(e)
+    });
   }
 }
