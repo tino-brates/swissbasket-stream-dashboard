@@ -72,20 +72,6 @@ async function listStreamsByIds(accessToken, ids) {
   return map;
 }
 
-function ymdCH(dateISO) {
-  const d = new Date(dateISO);
-  const parts = new Intl.DateTimeFormat("fr-CH", {
-    timeZone: "Europe/Zurich",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).formatToParts(d);
-  const y = parts.find(p => p.type === "year").value;
-  const m = parts.find(p => p.type === "month").value;
-  const da = parts.find(p => p.type === "day").value;
-  return `${y}-${m}-${da}`;
-}
-
 const lc = s => (s || "").toLowerCase();
 
 export default async function handler(req, res) {
@@ -93,36 +79,27 @@ export default async function handler(req, res) {
   try {
     const access = await getAccessToken();
 
-    const todayKey = ymdCH(Date.now());
-
     const broadcasts = await listAllBroadcasts(access, debugFlag);
 
-    const filtered = (broadcasts || []).filter(b => {
+    const relevant = (broadcasts || []).filter(b => {
       const ls = lc(b?.status?.lifeCycleStatus);
       return ls === "live" || ls === "upcoming";
     });
 
-    const todayItems = filtered.filter(b => {
-      const cd = b.contentDetails || {};
-      const t = cd.actualStartTime || cd.scheduledStartTime || b.snippet?.publishedAt;
-      if (!t) return false;
-      return ymdCH(t) === todayKey;
-    });
-
-    const ids = todayItems
+    const ids = relevant
       .map(b => (b.contentDetails || {}).boundStreamId)
       .filter(Boolean);
     const streamsMap = await listStreamsByIds(access, ids);
 
-    const items = todayItems
+    const items = relevant
       .map(b => {
         const cd = b.contentDetails || {};
         const sid = cd.boundStreamId || null;
         const stream = sid ? streamsMap.get(sid) : null;
         const ingest = (stream?.cdn?.ingestionInfo) || {};
         const streamKey = ingest.streamName || "";
-        const when = cd.actualStartTime || cd.scheduledStartTime || null;
-        const status = cd.actualStartTime ? "live" : "upcoming";
+        const when = cd.actualStartTime || cd.scheduledStartTime || b.snippet?.publishedAt || null;
+        const status = lc(b?.status?.lifeCycleStatus) === "live" ? "live" : "upcoming";
         const rawLabel = (stream?.snippet?.title || "").trim();
         const streamLabelRaw = rawLabel || "";
         const streamLabel = streamLabelRaw || streamKey || "";
@@ -149,16 +126,7 @@ export default async function handler(req, res) {
     if (debugFlag) {
       payload.debug = {
         totalBroadcasts: broadcasts.length,
-        filteredCount: filtered.length,
-        todayKey,
-        matched: todayItems.length,
-        rawDates: todayItems.map(b => ({
-          id: b.id,
-          lifeCycleStatus: b.status?.lifeCycleStatus || "",
-          actualStart: b.contentDetails?.actualStartTime || null,
-          scheduledStart: b.contentDetails?.scheduledStartTime || null,
-          publishedAt: b.snippet?.publishedAt || null
-        }))
+        relevantCount: relevant.length
       };
     }
 
