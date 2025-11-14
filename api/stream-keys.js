@@ -97,7 +97,8 @@ export default async function handler(req, res) {
       const privacy = (b.status?.privacyStatus || "").toLowerCase();
       const isLive = st === "live";
 
-      const scheduled = sn.scheduledStartTime || null;
+      // 🔧 CORRECTION : on lit d'abord contentDetails.scheduledStartTime
+      const scheduled = cd.scheduledStartTime || sn.scheduledStartTime || null;
 
       if (scheduled) {
         const schedMs = Date.parse(scheduled);
@@ -111,7 +112,6 @@ export default async function handler(req, res) {
           schedMs
         });
         if (dYmd !== todayCH) continue;
-        if (!Number.isNaN(schedMs) && schedMs < nowMs && !isLive) continue;
       } else {
         debugDates.push({
           id: b.id,
@@ -142,7 +142,7 @@ export default async function handler(req, res) {
         const status = st === "live" ? "live" : "upcoming";
         const privacy = (b.status?.privacyStatus || "").toLowerCase();
 
-        const scheduled = sn.scheduledStartTime || null;
+        const scheduled = cd.scheduledStartTime || sn.scheduledStartTime || null;
         const when = scheduled || sn.publishedAt || null;
 
         const sid = cd.boundStreamId || null;
