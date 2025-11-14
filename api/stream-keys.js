@@ -35,37 +35,71 @@ async function getAccessToken() {
 }
 
 async function listAllBroadcasts(accessToken) {
-  const u = new URL(YT_BROADCASTS);
-  u.searchParams.set("part", "id,snippet,contentDetails,status");
-  u.searchParams.set("mine", "true");
-  u.searchParams.set("maxResults", "50");
-  const r = await fetch(u.toString(), {
-    headers: { Authorization: `Bearer ${accessToken}` }
-  });
-  const text = await r.text();
-  if (!r.ok) throw new Error(`liveBroadcasts(${r.status}): ${text.slice(0, 200)}`);
-  const j = JSON.parse(text);
-  return j.items || [];
+  let items = [];
+  let pageToken = undefined;
+  let safety = 0;
+
+  while (true) {
+    const u = new URL(YT_BROADCASTS);
+    u.searchParams.set("part", "id,snippet,contentDetails,status");
+    u.searchParams.set("mine", "true");
+    u.searchParams.set("maxResults", "50");
+    if (pageToken) u.searchParams.set("pageToken", pageToken);
+
+    const r = await fetch(u.toString(), {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    const text = await r.text();
+    if (!r.ok) throw new Error(`liveBroadcasts(${r.status}): ${text.slice(0, 200)}`);
+
+    let j;
+    try {
+      j = JSON.parse(text);
+    } catch {
+      throw new Error("liveBroadcasts(json)");
+    }
+
+    const batch = j.items || [];
+    items = items.concat(batch);
+
+    pageToken = j.nextPageToken;
+    safety += 1;
+    if (!pageToken || safety > 10) break;
+  }
+
+  return items;
 }
 
 async function listStreamsByIds(accessToken, ids) {
   if (!ids.length) return new Map();
-  const u = new URL(YT_STREAMS);
-  u.searchParams.set("part", "status,cdn,snippet");
-  u.searchParams.set("id", ids.join(","));
-  const r = await fetch(u.toString(), {
-    headers: { Authorization: `Bearer ${accessToken}` }
-  });
-  const text = await r.text();
-  if (!r.ok) throw new Error(`liveStreams(${r.status}): ${text.slice(0, 200)}`);
-  const j = JSON.parse(text);
+  const unique = [...new Set(ids)];
   const map = new Map();
-  (j.items || []).forEach(s => map.set(s.id, s));
+
+  const chunkSize = 50;
+  for (let i = 0; i < unique.length; i += chunkSize) {
+    const slice = unique.slice(i, i + chunkSize);
+    const u = new URL(YT_STREAMS);
+    u.searchParams.set("part", "status,cdn,snippet");
+    u.searchParams.set("id", slice.join(","));
+    const r = await fetch(u.toString(), {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    const text = await r.text();
+    if (!r.ok) throw new Error(`liveStreams(${r.status}): ${text.slice(0, 200)}`);
+    let j;
+    try {
+      j = JSON.parse(text);
+    } catch {
+      throw new Error("liveStreams(json)");
+    }
+    (j.items || []).forEach(s => map.set(s.id, s));
+  }
+
   return map;
 }
 
-function ymdCH(dateISO) {
-  const d = new Date(dateISO);
+function ymdCH(dateInput) {
+  const d = new Date(dateInput);
   const parts = new Intl.DateTimeFormat("fr-CH", {
     timeZone: "Europe/Zurich",
     year: "numeric",
@@ -93,61 +127,63 @@ export default async function handler(req, res) {
     for (const b of all) {
       const sn = b.snippet || {};
       const cd = b.contentDetails || {};
-      const stRaw = (b.status?.lifeCycleStatus || "").toLowerCase();
+      const st = (b.status?.lifeCycleStatus || "").toLowerCase();
       const privacy = (b.status?.privacyStatus || "").toLowerCase();
-
-      const isLive = stRaw === "live";
-      const isUpcoming = stRaw === "upcoming" || stRaw === "ready" || stRaw === "testing";
 
       const scheduled = cd.scheduledStartTime || sn.scheduledStartTime || null;
       const actual = cd.actualStartTime || null;
 
-      let ymd = null;
+      let dateRef = null;
       if (actual) {
-        ymd = ymdCH(actual);
+        dateRef = actual;
       } else if (scheduled) {
-        ymd = ymdCH(scheduled);
+        dateRef = scheduled;
       } else if (sn.publishedAt) {
-        ymd = ymdCH(sn.publishedAt);
+        dateRef = sn.publishedAt;
+      }
+
+      let ymd = null;
+      if (dateRef) {
+        try {
+          ymd = ymdCH(dateRef);
+        } catch {
+          ymd = null;
+        }
       }
 
       debugDates.push({
         id: b.id,
-        lifeCycleStatus: stRaw,
+        lifeCycleStatus: st,
         privacy,
         scheduled,
         actual,
         ymd
       });
 
+      if (!dateRef || !ymd) continue;
+      if (ymd !== todayCH) continue;
+
+      const isLive = st === "live";
+      const isUpcomingLike = st === "ready" || st === "upcoming" || st === "created";
+
+      if (!isLive && !isUpcomingLike) continue;
       if (!cd.boundStreamId) continue;
 
-      if (isLive) {
-        todayBroadcasts.push(b);
-        continue;
-      }
-
-      if (isUpcoming) {
-        if (!scheduled) continue;
-        const schedYmd = ymdCH(scheduled);
-        if (schedYmd !== todayCH) continue;
-        todayBroadcasts.push(b);
-        continue;
-      }
+      todayBroadcasts.push(b);
     }
 
     const streamIds = todayBroadcasts
       .map(b => (b.contentDetails || {}).boundStreamId)
       .filter(Boolean);
 
-    const streamsMap = await listStreamsByIds(access, [...new Set(streamIds)]);
+    const streamsMap = await listStreamsByIds(access, streamIds);
 
     const items = todayBroadcasts
       .map(b => {
         const sn = b.snippet || {};
         const cd = b.contentDetails || {};
-        const stRaw = (b.status?.lifeCycleStatus || "").toLowerCase();
-        const status = stRaw === "live" ? "live" : "upcoming";
+        const st = (b.status?.lifeCycleStatus || "").toLowerCase();
+        const status = st === "live" ? "live" : "upcoming";
         const privacy = (b.status?.privacyStatus || "").toLowerCase();
 
         const scheduled = cd.scheduledStartTime || sn.scheduledStartTime || null;
@@ -158,6 +194,7 @@ export default async function handler(req, res) {
         const stream = sid ? streamsMap.get(sid) : null;
         const ingest = stream?.cdn?.ingestionInfo || {};
         const streamKey = ingest.streamName || "";
+        if (!streamKey) return null;
 
         const streamLabelRaw = stream?.snippet?.title || "";
         let streamLabel = streamLabelRaw;
