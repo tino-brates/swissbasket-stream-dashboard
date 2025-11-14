@@ -34,17 +34,26 @@ async function getAccessToken() {
   return j.access_token;
 }
 
-async function listBroadcasts(accessToken, status) {
+async function listAllBroadcasts(accessToken, debug) {
   const u = new URL(YT_BROADCASTS);
   u.searchParams.set("part", "id,snippet,contentDetails,status");
-  u.searchParams.set("broadcastStatus", status);
   u.searchParams.set("mine", "true");
   u.searchParams.set("maxResults", "50");
   const r = await fetch(u.toString(), {
     headers: { Authorization: `Bearer ${accessToken}` }
   });
-  if (!r.ok) return [];
-  const j = await r.json();
+  const text = await r.text();
+  if (!r.ok) {
+    if (debug) throw new Error(`liveBroadcasts(${r.status}): ${text.slice(0,400)}`);
+    throw new Error("liveBroadcasts");
+  }
+  let j;
+  try {
+    j = JSON.parse(text);
+  } catch {
+    if (debug) throw new Error(`liveBroadcasts(json): ${text.slice(0,200)}`);
+    throw new Error("liveBroadcasts json");
+  }
   return j.items || [];
 }
 
@@ -77,23 +86,27 @@ function ymdCH(dateISO) {
   return `${y}-${m}-${da}`;
 }
 
+const lc = s => (s || "").toLowerCase();
+
 export default async function handler(req, res) {
+  const debugFlag = req.query.debug === "1" || req.query.debug === "true";
   try {
     const access = await getAccessToken();
 
-    const todayCH = ymdCH(Date.now());
+    const todayKey = ymdCH(Date.now());
 
-    const [liveB, upB] = await Promise.all([
-      listBroadcasts(access, "active"),
-      listBroadcasts(access, "upcoming")
-    ]);
-    const all = [...liveB, ...upB];
+    const broadcasts = await listAllBroadcasts(access, debugFlag);
 
-    const todayItems = all.filter(b => {
+    const filtered = (broadcasts || []).filter(b => {
+      const ls = lc(b?.status?.lifeCycleStatus);
+      return ls === "live" || ls === "upcoming";
+    });
+
+    const todayItems = filtered.filter(b => {
       const cd = b.contentDetails || {};
       const t = cd.actualStartTime || cd.scheduledStartTime || b.snippet?.publishedAt;
       if (!t) return false;
-      return ymdCH(t) === todayCH;
+      return ymdCH(t) === todayKey;
     });
 
     const ids = todayItems
@@ -132,7 +145,24 @@ export default async function handler(req, res) {
         return ta - tb;
       });
 
-    res.status(200).json({ items });
+    const payload = { items };
+    if (debugFlag) {
+      payload.debug = {
+        totalBroadcasts: broadcasts.length,
+        filteredCount: filtered.length,
+        todayKey,
+        matched: todayItems.length,
+        rawDates: todayItems.map(b => ({
+          id: b.id,
+          lifeCycleStatus: b.status?.lifeCycleStatus || "",
+          actualStart: b.contentDetails?.actualStartTime || null,
+          scheduledStart: b.contentDetails?.scheduledStartTime || null,
+          publishedAt: b.snippet?.publishedAt || null
+        }))
+      };
+    }
+
+    res.status(200).json(payload);
   } catch (e) {
     res.status(200).json({ items: [], error: String(e) });
   }
