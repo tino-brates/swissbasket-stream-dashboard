@@ -102,17 +102,13 @@ export default async function handler(req, res) {
       const scheduled = cd.scheduledStartTime || sn.scheduledStartTime || null;
       const actual = cd.actualStartTime || null;
 
-      let dateKey = null;
-      if (isLive) {
-        if (actual) {
-          dateKey = ymdCH(actual);
-        } else if (scheduled) {
-          dateKey = ymdCH(scheduled);
-        }
-      } else if (isUpcoming) {
-        if (scheduled) {
-          dateKey = ymdCH(scheduled);
-        }
+      let ymd = null;
+      if (actual) {
+        ymd = ymdCH(actual);
+      } else if (scheduled) {
+        ymd = ymdCH(scheduled);
+      } else if (sn.publishedAt) {
+        ymd = ymdCH(sn.publishedAt);
       }
 
       debugDates.push({
@@ -121,14 +117,23 @@ export default async function handler(req, res) {
         privacy,
         scheduled,
         actual,
-        ymd: dateKey
+        ymd
       });
 
-      if (!isLive && !isUpcoming) continue;
-      if (!dateKey || dateKey !== todayCH) continue;
       if (!cd.boundStreamId) continue;
 
-      todayBroadcasts.push(b);
+      if (isLive) {
+        todayBroadcasts.push(b);
+        continue;
+      }
+
+      if (isUpcoming) {
+        if (!scheduled) continue;
+        const schedYmd = ymdCH(scheduled);
+        if (schedYmd !== todayCH) continue;
+        todayBroadcasts.push(b);
+        continue;
+      }
     }
 
     const streamIds = todayBroadcasts
