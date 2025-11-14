@@ -97,7 +97,6 @@ export default async function handler(req, res) {
       const privacy = (b.status?.privacyStatus || "").toLowerCase();
       const isLive = st === "live";
 
-      // 🔧 CORRECTION : on lit d'abord contentDetails.scheduledStartTime
       const scheduled = cd.scheduledStartTime || sn.scheduledStartTime || null;
 
       if (scheduled) {
@@ -111,7 +110,11 @@ export default async function handler(req, res) {
           ymd: dYmd,
           schedMs
         });
-        if (dYmd !== todayCH) continue;
+
+        // 🔧 ICI le changement :
+        // avant : if (dYmd !== todayCH) continue;
+        // maintenant : on garde aujourd'hui ET le futur, on vire juste les jours passés
+        if (dYmd < todayCH) continue;
       } else {
         debugDates.push({
           id: b.id,
@@ -149,7 +152,6 @@ export default async function handler(req, res) {
         const stream = sid ? streamsMap.get(sid) : null;
         const ingest = stream?.cdn?.ingestionInfo || {};
         const streamKey = ingest.streamName || "";
-        if (!streamKey) return null;
 
         const streamLabelRaw = stream?.snippet?.title || "";
         let streamLabel = streamLabelRaw;
