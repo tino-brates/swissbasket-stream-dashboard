@@ -93,39 +93,41 @@ export default async function handler(req, res) {
     for (const b of all) {
       const sn = b.snippet || {};
       const cd = b.contentDetails || {};
-      const st = (b.status?.lifeCycleStatus || "").toLowerCase();
+      const stRaw = (b.status?.lifeCycleStatus || "").toLowerCase();
       const privacy = (b.status?.privacyStatus || "").toLowerCase();
-      const isLive = st === "live";
+
+      const isLive = stRaw === "live";
+      const isUpcoming = stRaw === "upcoming" || stRaw === "ready" || stRaw === "testing";
 
       const scheduled = cd.scheduledStartTime || sn.scheduledStartTime || null;
+      const actual = cd.actualStartTime || null;
 
-      if (scheduled) {
-        const schedMs = Date.parse(scheduled);
-        const dYmd = ymdCH(scheduled);
-        debugDates.push({
-          id: b.id,
-          lifeCycleStatus: st,
-          privacy,
-          scheduled,
-          ymd: dYmd,
-          schedMs
-        });
-
-        // 👉 ne garder QUE les events de la journée (Europe/Zurich)
-        if (dYmd !== todayCH) continue;
-      } else {
-        debugDates.push({
-          id: b.id,
-          lifeCycleStatus: st,
-          privacy,
-          scheduled: null,
-          ymd: null,
-          schedMs: null
-        });
-        if (!isLive) continue;
+      let dateKey = null;
+      if (isLive) {
+        if (actual) {
+          dateKey = ymdCH(actual);
+        } else if (scheduled) {
+          dateKey = ymdCH(scheduled);
+        }
+      } else if (isUpcoming) {
+        if (scheduled) {
+          dateKey = ymdCH(scheduled);
+        }
       }
 
+      debugDates.push({
+        id: b.id,
+        lifeCycleStatus: stRaw,
+        privacy,
+        scheduled,
+        actual,
+        ymd: dateKey
+      });
+
+      if (!isLive && !isUpcoming) continue;
+      if (!dateKey || dateKey !== todayCH) continue;
       if (!cd.boundStreamId) continue;
+
       todayBroadcasts.push(b);
     }
 
@@ -139,12 +141,13 @@ export default async function handler(req, res) {
       .map(b => {
         const sn = b.snippet || {};
         const cd = b.contentDetails || {};
-        const st = (b.status?.lifeCycleStatus || "").toLowerCase();
-        const status = st === "live" ? "live" : "upcoming";
+        const stRaw = (b.status?.lifeCycleStatus || "").toLowerCase();
+        const status = stRaw === "live" ? "live" : "upcoming";
         const privacy = (b.status?.privacyStatus || "").toLowerCase();
 
         const scheduled = cd.scheduledStartTime || sn.scheduledStartTime || null;
-        const when = scheduled || sn.publishedAt || null;
+        const actual = cd.actualStartTime || null;
+        const when = actual || scheduled || sn.publishedAt || null;
 
         const sid = cd.boundStreamId || null;
         const stream = sid ? streamsMap.get(sid) : null;
