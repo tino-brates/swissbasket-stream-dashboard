@@ -111,10 +111,8 @@ export default async function handler(req, res) {
           schedMs
         });
 
-        // 🔧 ICI le changement :
-        // avant : if (dYmd !== todayCH) continue;
-        // maintenant : on garde aujourd'hui ET le futur, on vire juste les jours passés
-        if (dYmd < todayCH) continue;
+        // 👉 ne garder QUE les events de la journée (Europe/Zurich)
+        if (dYmd !== todayCH) continue;
       } else {
         debugDates.push({
           id: b.id,
