@@ -224,8 +224,34 @@ function lateKey(ev){
   return ev.url || ev.id || (ev.title + '|' + (ev.scheduledStart || ''));
 }
 
+// ✅ nouvelle version : priorité aux streamKeys du jour, fallback ytUpcoming
 function getLateEventsRaw(){
   const now = nowMs();
+  const late = [];
+
+  // 1) Source principale : streamkeys du jour (issue de /api/stream-keys)
+  (state.data.streamKeys || []).forEach(it => {
+    if (!it) return;
+    if (it.status !== 'upcoming') return;
+    if (!it.when) return;
+
+    const vis = (it.privacy || '').toLowerCase();
+    if (vis && vis !== 'public') return;
+
+    const t = parseUTCDate(it.when).getTime();
+    if (t + LATE_GRACE_MIN * 60000 < now) {
+      late.push({
+        title: it.title,
+        url: it.url,
+        scheduledStart: it.when,
+        visibility: it.privacy || 'public'
+      });
+    }
+  });
+
+  if (late.length) return late;
+
+  // 2) Fallback : ancien comportement basé sur /api/yt-upcoming
   return (state.data.ytUpcoming || []).filter(ev=>{
     if(!ev || !ev.scheduledStart) return false;
     const vis = (ev.visibility || '').toLowerCase();
@@ -601,10 +627,12 @@ async function loadIssues(){
   renderIssues();
 }
 
+// ✅ on recalcule aussi les alertes après chaque reload des streamkeys
 async function loadStreamKeys(){
   const sk = await fetchJSON('/api/stream-keys').catch(()=>({items:[]}));
   state.data.streamKeys = sk.items || [];
   renderStreamKeys();
+  renderLateAlerts();
 }
 
 /* ---------------- UI ---------------- */

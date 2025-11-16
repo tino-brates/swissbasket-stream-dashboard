@@ -16,8 +16,14 @@ function pickCreds() {
   return (P.client_id && P.client_secret && P.refresh_token) ? P : D;
 }
 
+// ✅ version verbeuse pour voir l'erreur réelle du token
 async function getAccessToken() {
   const { client_id, client_secret, refresh_token } = pickCreds();
+
+  if (!client_id || !client_secret || !refresh_token) {
+    throw new Error("token-env-missing: client_id / client_secret / refresh_token manquants");
+  }
+
   const body = new URLSearchParams({
     client_id,
     client_secret,
@@ -29,8 +35,13 @@ async function getAccessToken() {
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body
   });
-  const j = await r.json();
-  if (!r.ok || !j.access_token) throw new Error(`token(${r.status})`);
+  const text = await r.text();
+  let j;
+  try { j = JSON.parse(text); } catch { j = {}; }
+
+  if (!r.ok || !j.access_token) {
+    throw new Error(`token(${r.status}): ${text.slice(0, 400)}`);
+  }
   return j.access_token;
 }
 
@@ -133,22 +144,21 @@ export default async function handler(req, res) {
       const scheduled = cd.scheduledStartTime || sn.scheduledStartTime || null;
       const actual = cd.actualStartTime || null;
 
-      let dateRef = null;
+      // 🔧 nouvelle logique : on classe "du jour" via scheduled surtout
+      let ymdScheduled = null;
+      let ymdActual = null;
+      if (scheduled) {
+        try { ymdScheduled = ymdCH(scheduled); } catch { ymdScheduled = null; }
+      }
       if (actual) {
-        dateRef = actual;
-      } else if (scheduled) {
-        dateRef = scheduled;
-      } else if (sn.publishedAt) {
-        dateRef = sn.publishedAt;
+        try { ymdActual = ymdCH(actual); } catch { ymdActual = null; }
       }
 
-      let ymd = null;
-      if (dateRef) {
-        try {
-          ymd = ymdCH(dateRef);
-        } catch {
-          ymd = null;
-        }
+      let isToday = false;
+      if (ymdScheduled && ymdScheduled === todayCH) {
+        isToday = true;
+      } else if (!ymdScheduled && ymdActual && ymdActual === todayCH) {
+        isToday = true;
       }
 
       debugDates.push({
@@ -157,11 +167,11 @@ export default async function handler(req, res) {
         privacy,
         scheduled,
         actual,
-        ymd
+        ymdScheduled,
+        ymdActual
       });
 
-      if (!dateRef || !ymd) continue;
-      if (ymd !== todayCH) continue;
+      if (!isToday) continue;
 
       const isLive = st === "live";
       const isUpcomingLike = st === "ready" || st === "upcoming" || st === "created";

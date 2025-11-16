@@ -25,14 +25,31 @@ function pickCreds() {
   return (P.client_id && P.client_secret && P.refresh_token) ? P : D;
 }
 
+// ✅ version verbeuse pour debug token(400)
 async function getAccessToken() {
   const { client_id, client_secret, refresh_token } = pickCreds();
+
+  if (!client_id || !client_secret || !refresh_token) {
+    throw new Error("token-env-missing: client_id / client_secret / refresh_token manquants");
+  }
+
   const body = new URLSearchParams({
     client_id, client_secret, refresh_token, grant_type: "refresh_token"
   });
-  const r = await fetch(TOKEN_URL, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body });
-  const j = await r.json();
-  if (!r.ok || !j.access_token) throw new Error(`token(${r.status})`);
+
+  const r = await fetch(TOKEN_URL, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body
+  });
+
+  const text = await r.text();
+  let j;
+  try { j = JSON.parse(text); } catch { j = {}; }
+
+  if (!r.ok || !j.access_token) {
+    throw new Error(`token(${r.status}): ${text.slice(0, 400)}`);
+  }
   return j.access_token;
 }
 
