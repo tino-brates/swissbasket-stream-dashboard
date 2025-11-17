@@ -108,6 +108,7 @@ const state = {
 
 const CH_TZ = 'Europe/Zurich';
 const LATE_GRACE_MIN = 3;
+const LATE_STREAMKEY_GRACE_MIN = 2;
 const dismissedLateKeys = new Set();
 
 function parseSheetDate(input) {
@@ -221,41 +222,15 @@ function inActiveTabRange(d){
 
 /* --------- LATE EVENTS DETECTION --------- */
 function lateKey(ev){
-  return ev.url || ev.id || (ev.title + '|' + (ev.scheduledStart || ''));
+  return ev.url || ev.id || (ev.title + '|' + (ev.scheduledStart || ev.when || ''));
 }
 
-// ✅ nouvelle version : priorité aux streamKeys du jour, fallback ytUpcoming
 function getLateEventsRaw(){
   const now = nowMs();
-  const late = [];
-
-  // 1) Source principale : streamkeys du jour (issue de /api/stream-keys)
-  (state.data.streamKeys || []).forEach(it => {
-    if (!it) return;
-    if (it.status !== 'upcoming') return;
-    if (!it.when) return;
-
-    const vis = (it.privacy || '').toLowerCase();
-    if (vis && vis !== 'public') return;
-
-    const t = parseUTCDate(it.when).getTime();
-    if (t + LATE_GRACE_MIN * 60000 < now) {
-      late.push({
-        title: it.title,
-        url: it.url,
-        scheduledStart: it.when,
-        visibility: it.privacy || 'public'
-      });
-    }
-  });
-
-  if (late.length) return late;
-
-  // 2) Fallback : ancien comportement basé sur /api/yt-upcoming
   return (state.data.ytUpcoming || []).filter(ev=>{
     if(!ev || !ev.scheduledStart) return false;
     const vis = (ev.visibility || '').toLowerCase();
-    if(vis && vis !== 'public') return false;
+    if(vis && vis !== 'public' && vis !== 'unlisted') return false;
     const t = parseUTCDate(ev.scheduledStart).getTime();
     return t + LATE_GRACE_MIN*60000 < now;
   });
@@ -269,6 +244,25 @@ function getLateEventsForAlerts(){
   return getLateEventsRaw().filter(ev => !dismissedLateKeys.has(lateKey(ev)));
 }
 
+/* --------- LATE STREAMKEYS DETECTION --------- */
+function isLateStreamKey(it){
+  if(!it || !it.when) return false;
+  const status = (it.status || '').toLowerCase();
+  if(status === 'live') return false;
+  const visibility = (it.privacy || '').toLowerCase();
+  if(visibility === 'private') return false;
+  const t = parseUTCDate(it.when).getTime();
+  return t + LATE_STREAMKEY_GRACE_MIN*60000 < nowMs();
+}
+
+function getLateStreamKeysRaw(){
+  return (state.data.streamKeys || []).filter(isLateStreamKey);
+}
+
+function getLateStreamKeysForAlerts(){
+  return getLateStreamKeysRaw().filter(ev => !dismissedLateKeys.has(lateKey(ev)));
+}
+
 /* --------- RENDER LATE ALERT POPUPS --------- */
 function dismissLateAlert(key){
   dismissedLateKeys.add(key);
@@ -278,19 +272,28 @@ function dismissLateAlert(key){
 function renderLateAlerts(){
   const container = document.getElementById('alertsContainer');
   if(!container) return;
-  const late = getLateEventsForAlerts();
+  const lateYT = getLateEventsForAlerts();
+  const lateSK = getLateStreamKeysForAlerts();
+  const late = [...lateYT, ...lateSK];
   container.innerHTML = '';
+  if(!late.length) return;
+
   late.forEach(ev=>{
     const key = lateKey(ev);
     const keyJs = key.replace(/'/g,"\\'");
-    const whenTxt = ev.scheduledStart ? `${fmtDateUTC(ev.scheduledStart)} ${fmtTimeUTC(ev.scheduledStart)}` : '';
+    const rawWhen = ev.scheduledStart || ev.when || null;
+    const whenTxt = rawWhen ? `${fmtDateUTC(rawWhen)} ${fmtTimeUTC(rawWhen)}` : '';
+    const msg = LANG === 'fr'
+      ? "Attention, ce stream semble avoir un souci (retard)."
+      : "Warning, this stream seems to have an issue (late start).";
+
     const div = document.createElement('div');
     div.className='alert';
     div.innerHTML = `
       <div class="alert-icon">⚠️</div>
       <div class="alert-body">
         <div class="alert-title">${ev.title}</div>
-        <div class="alert-meta">${t('status_upcoming')} • ${whenTxt}</div>
+        <div class="alert-meta">${msg}${whenTxt ? ` • ${whenTxt}` : ''}</div>
       </div>
       <button class="alert-close" onclick="dismissLateAlert('${keyJs}')">×</button>
     `;
@@ -300,7 +303,8 @@ function renderLateAlerts(){
 
 /* --------- RENDER LATE CARD IN LIVE BOX --------- */
 function renderLateCard(ev, box){
-  const when = ev.scheduledStart ? `${fmtDateUTC(ev.scheduledStart)} ${fmtTimeUTC(ev.scheduledStart)}` : '';
+  const rawWhen = ev.scheduledStart || ev.when || null;
+  const when = rawWhen ? `${fmtDateUTC(rawWhen)} ${fmtTimeUTC(rawWhen)}` : '';
   const el = document.createElement('div');
   el.className = 'item item-late';
   el.innerHTML = `
@@ -532,8 +536,10 @@ function renderStreamKeys(){
       : `<span class="tag">${t('status_upcoming')}</span>`;
     const whenTxt = it.when ? `${fmtDateUTC(it.when)} ${fmtTimeUTC(it.when)}` : '';
     const safeKey = (it.streamKey || '').replace(/'/g,"\\'");
+    const isLate = isLateStreamKey(it);
+    const itemClass = 'item' + (isLate ? ' item-late' : '');
     const el = document.createElement('div');
-    el.className = 'item';
+    el.className = itemClass;
     el.innerHTML = `
       <div style="display:flex;flex-direction:column;gap:4px;min-width:0;">
         <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${it.title}</div>
@@ -575,7 +581,7 @@ async function loadCalendars(){
   renderUpcoming(); setLastUpdate();
 }
 
-/* 🔧 FIX ICI : on récupère /api/live + /api/yt-upcoming, avec fallback */
+/* 🔧 YouTube live + upcoming */
 async function loadYouTube(){
   let payload = await fetchJSON('/api/live').catch(()=>({
     live:[],
@@ -627,7 +633,6 @@ async function loadIssues(){
   renderIssues();
 }
 
-// ✅ on recalcule aussi les alertes après chaque reload des streamkeys
 async function loadStreamKeys(){
   const sk = await fetchJSON('/api/stream-keys').catch(()=>({items:[]}));
   state.data.streamKeys = sk.items || [];
@@ -653,4 +658,4 @@ setInterval(loadYouTube, 60000);
 setInterval(loadIssues, 60000);
 setInterval(loadHealth, 30000);
 setInterval(loadStreamKeys, 60000);
-setInterval(()=>{ if (state.data.live && state.data.live.length){ renderLive(); } }, 1000);
+setInterval(()=>{ if (state.data.live && state.data.live.length){ renderLive(); renderLateAlerts(); } }, 1000);
