@@ -1,4 +1,4 @@
-// api/yt-upcoming.js — upcoming robustes, inclut PRIVÉS via mine=true (sans broadcastStatus)
+// api/yt-upcoming.js — upcoming robustes, avec pagination sur liveBroadcasts.mine
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const YT_BROADCASTS = "https://www.googleapis.com/youtube/v3/liveBroadcasts";
 const YT_SEARCH = "https://www.googleapis.com/youtube/v3/search";
@@ -19,12 +19,9 @@ function pickCreds() {
   return (P.client_id && P.client_secret && P.refresh_token) ? P : D;
 }
 
-// ✅ version verbeuse
 async function getAccessToken() {
   const { client_id, client_secret, refresh_token } = pickCreds();
-  if (!client_id || !client_secret || !refresh_token) {
-    throw new Error("token-env-missing: client_id / client_secret / refresh_token manquants");
-  }
+  if (!client_id || !client_secret || !refresh_token) throw new Error("missing_creds");
   const body = new URLSearchParams({
     client_id, client_secret, refresh_token, grant_type: "refresh_token"
   });
@@ -33,12 +30,8 @@ async function getAccessToken() {
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body,
   });
-  const text = await r.text();
-  let j;
-  try { j = JSON.parse(text); } catch { j = {}; }
-  if (!r.ok || !j.access_token) {
-    throw new Error(`token(${r.status}): ${text.slice(0,400)}`);
-  }
+  const j = await r.json();
+  if (!r.ok || !j.access_token) throw new Error("token");
   return j.access_token;
 }
 
@@ -51,28 +44,47 @@ async function channelIdForMine(accessToken) {
   return j?.items?.[0]?.id || null;
 }
 
-// NOTE: pas de broadcastStatus ici (sinon 400)
+// ---------- liveBroadcasts.mine avec pagination ----------
 async function listBroadcastsMineAll(accessToken) {
-  const u = new URL(YT_BROADCASTS);
-  u.searchParams.set("part", "id,snippet,contentDetails,status");
-  u.searchParams.set("mine", "true");
-  u.searchParams.set("maxResults", "50");
-  const r = await fetch(u.toString(), { headers: { Authorization: `Bearer ${accessToken}` } });
-  if (!r.ok) return [];
-  const j = await r.json();
-  return j.items || [];
+  let items = [];
+  let pageToken = undefined;
+  let safety = 0;
+
+  while (true) {
+    const u = new URL(YT_BROADCASTS);
+    u.searchParams.set("part", "id,snippet,contentDetails,status");
+    u.searchParams.set("mine", "true");
+    u.searchParams.set("maxResults", "50");
+    if (pageToken) u.searchParams.set("pageToken", pageToken);
+
+    const r = await fetch(u.toString(), {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    const text = await r.text();
+    if (!r.ok) return items;
+
+    let j;
+    try { j = JSON.parse(text); } catch { return items; }
+
+    const batch = j.items || [];
+    items = items.concat(batch);
+
+    pageToken = j.nextPageToken;
+    safety += 1;
+    if (!pageToken || safety > 10) break;
+  }
+
+  return items;
 }
 
 function isUpcoming(b) {
-  const life = (b?.status?.lifeCycleStatus || "").toLowerCase(); // created | ready | testing | live | complete | revoked | ...
+  const life = (b?.status?.lifeCycleStatus || "").toLowerCase();
   const sched = b?.contentDetails?.scheduledStartTime || b?.snippet?.scheduledStartTime || null;
   const hasFutureStart = sched ? new Date(sched).getTime() > Date.now() : false;
-  // YouTube n’est pas toujours propre sur lifeCycleStatus, on combine avec la date future
-  return hasFutureStart || life === "created" || life === "ready";
+  return hasFutureStart || life === "created" || life === "ready" || life === "upcoming";
 }
 
 async function searchUpcoming(accessToken, channelId) {
-  // publics seulement
   const u = new URL(YT_SEARCH);
   u.searchParams.set("part", "snippet");
   u.searchParams.set("type", "video");
@@ -108,7 +120,6 @@ export default async function handler(req, res) {
   try {
     const access = await getAccessToken();
 
-    // 1) Mine (inclut privés) — SANS broadcastStatus
     const allMine = await listBroadcastsMineAll(access);
     const mineUpcoming = allMine
       .filter(isUpcoming)
@@ -123,7 +134,6 @@ export default async function handler(req, res) {
       }))
       .filter(x => !!x.scheduledStart);
 
-    // 2) Fallback publics via search.list (+details)
     let publicItems = [];
     if (mineUpcoming.length === 0) {
       const forced = process.env.YT_CHANNEL_ID || "";
@@ -145,7 +155,14 @@ export default async function handler(req, res) {
       }).filter(x => !!x.scheduledStart);
     }
 
-    const items = [...mineUpcoming, ...publicItems]
+    const merged = [...mineUpcoming, ...publicItems];
+
+    const dedupMap = new Map();
+    merged.forEach(it => {
+      if (!dedupMap.has(it.id)) dedupMap.set(it.id, it);
+    });
+
+    const items = Array.from(dedupMap.values())
       .sort((a,b)=>new Date(a.scheduledStart)-new Date(b.scheduledStart));
 
     res.status(200).json({ items });

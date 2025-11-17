@@ -25,45 +25,52 @@ function pickCreds() {
   return (P.client_id && P.client_secret && P.refresh_token) ? P : D;
 }
 
-// ✅ version verbeuse pour debug token(400)
 async function getAccessToken() {
   const { client_id, client_secret, refresh_token } = pickCreds();
-
-  if (!client_id || !client_secret || !refresh_token) {
-    throw new Error("token-env-missing: client_id / client_secret / refresh_token manquants");
-  }
-
   const body = new URLSearchParams({
     client_id, client_secret, refresh_token, grant_type: "refresh_token"
   });
-
   const r = await fetch(TOKEN_URL, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body
   });
-
-  const text = await r.text();
-  let j;
-  try { j = JSON.parse(text); } catch { j = {}; }
-
-  if (!r.ok || !j.access_token) {
-    throw new Error(`token(${r.status}): ${text.slice(0, 400)}`);
-  }
+  const j = await r.json();
+  if (!r.ok || !j.access_token) throw new Error(`token(${r.status})`);
   return j.access_token;
 }
 
-// ✅ une seule liste: mine=true, SANS broadcastStatus (sinon 400 incompatibleParameters)
+// ---------- liveBroadcasts avec pagination ----------
 async function listAllBroadcasts(accessToken) {
-  const u = new URL(YT_BROADCASTS);
-  u.searchParams.set("part", "id,snippet,contentDetails,status");
-  u.searchParams.set("mine", "true");
-  u.searchParams.set("maxResults", "50");
-  const r = await fetch(u.toString(), { headers: { Authorization: `Bearer ${accessToken}` } });
-  const text = await r.text();
-  if (!r.ok) throw new Error(`liveBroadcasts(${r.status}): ${text.slice(0,200)}`);
-  const j = JSON.parse(text);
-  return j.items || [];
+  let items = [];
+  let pageToken = undefined;
+  let safety = 0;
+
+  while (true) {
+    const u = new URL(YT_BROADCASTS);
+    u.searchParams.set("part", "id,snippet,contentDetails,status");
+    u.searchParams.set("mine", "true");
+    u.searchParams.set("maxResults", "50");
+    if (pageToken) u.searchParams.set("pageToken", pageToken);
+
+    const r = await fetch(u.toString(), {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    const text = await r.text();
+    if (!r.ok) throw new Error(`liveBroadcasts(${r.status}): ${text.slice(0,200)}`);
+
+    let j;
+    try { j = JSON.parse(text); } catch { throw new Error("liveBroadcasts(json)"); }
+
+    const batch = j.items || [];
+    items = items.concat(batch);
+
+    pageToken = j.nextPageToken;
+    safety += 1;
+    if (!pageToken || safety > 10) break;
+  }
+
+  return items;
 }
 
 async function videosDetails(accessToken, ids) {
@@ -85,7 +92,11 @@ async function videosDetails(accessToken, ids) {
 }
 
 // ---------- Fallback Atom minimal ----------
-function textBetween(s, a, b){ const i=s.indexOf(a); if(i<0) return ""; const j=s.indexOf(b,i+a.length); if(j<0) return ""; return s.slice(i+a.length,j); }
+function textBetween(s, a, b){
+  const i=s.indexOf(a); if(i<0) return "";
+  const j=s.indexOf(b,i+a.length); if(j<0) return "";
+  return s.slice(i+a.length,j);
+}
 function parseAtom(xml){
   const parts = xml.split("<entry>").slice(1).map(seg=>"<entry>"+seg);
   return parts.map(e=>({
@@ -122,7 +133,6 @@ export default async function handler(req, res) {
     const access = await getAccessToken();
     const items = await listAllBroadcasts(access);
 
-    // partition côté code (live / upcoming)
     let live = items
       .filter(b => (b.status?.lifeCycleStatus||"").toLowerCase() === "live")
       .map(b => ({
@@ -143,14 +153,17 @@ export default async function handler(req, res) {
         visibility: b.status?.privacyStatus || "public"
       }));
 
-    // fallback startedAt via videos.list si manquant
     const missingIds = live.filter(x => !x.startedAt).map(x => x.id);
     if (missingIds.length) {
       const det = await videosDetails(access, missingIds);
       live = live.map(x => {
         if (x.startedAt) return x;
         const d = det.get(x.id) || {};
-        return { ...x, startedAt: d.actualStart || null, visibility: x.visibility || d.privacy || "public" };
+        return {
+          ...x,
+          startedAt: d.actualStart || null,
+          visibility: x.visibility || d.privacy || "public"
+        };
       });
     }
 
@@ -159,7 +172,6 @@ export default async function handler(req, res) {
     return res.status(200).json(CACHE.data);
 
   } catch (e) {
-    // dernier recours: Atom (pas de quota)
     meta.lastError = String(e);
     try {
       const fb = await atomFallback();
