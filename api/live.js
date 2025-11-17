@@ -8,8 +8,8 @@ let CACHE = {
   data: { live: [], upcoming: [], meta: { source: "init", lastError: "" } },
   backoffUntil: 0
 };
-const CACHE_TTL_MS = 120000; // 2 min
-const BACKOFF_MS = 300000;   // 5 min
+const CACHE_TTL_MS = 120000;
+const BACKOFF_MS = 300000;
 
 function pickCreds() {
   const P = {
@@ -28,7 +28,10 @@ function pickCreds() {
 async function getAccessToken() {
   const { client_id, client_secret, refresh_token } = pickCreds();
   const body = new URLSearchParams({
-    client_id, client_secret, refresh_token, grant_type: "refresh_token"
+    client_id,
+    client_secret,
+    refresh_token,
+    grant_type: "refresh_token"
   });
   const r = await fetch(TOKEN_URL, {
     method: "POST",
@@ -40,7 +43,6 @@ async function getAccessToken() {
   return j.access_token;
 }
 
-// ---------- liveBroadcasts avec pagination ----------
 async function listAllBroadcasts(accessToken) {
   let items = [];
   let pageToken = undefined;
@@ -57,10 +59,14 @@ async function listAllBroadcasts(accessToken) {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
     const text = await r.text();
-    if (!r.ok) throw new Error(`liveBroadcasts(${r.status}): ${text.slice(0,200)}`);
+    if (!r.ok) throw new Error(`liveBroadcasts(${r.status}): ${text.slice(0, 200)}`);
 
     let j;
-    try { j = JSON.parse(text); } catch { throw new Error("liveBroadcasts(json)"); }
+    try {
+      j = JSON.parse(text);
+    } catch {
+      throw new Error("liveBroadcasts(json)");
+    }
 
     const batch = j.items || [];
     items = items.concat(batch);
@@ -78,7 +84,9 @@ async function videosDetails(accessToken, ids) {
   const u = new URL(YT_VIDEOS);
   u.searchParams.set("part", "liveStreamingDetails,snippet,status");
   u.searchParams.set("id", ids.join(","));
-  const r = await fetch(u.toString(), { headers: { Authorization: `Bearer ${accessToken}` }});
+  const r = await fetch(u.toString(), {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
   const j = await r.json();
   const map = new Map();
   (j.items || []).forEach(v => {
@@ -91,34 +99,61 @@ async function videosDetails(accessToken, ids) {
   return map;
 }
 
-// ---------- Fallback Atom minimal ----------
-function textBetween(s, a, b){
-  const i=s.indexOf(a); if(i<0) return "";
-  const j=s.indexOf(b,i+a.length); if(j<0) return "";
-  return s.slice(i+a.length,j);
+function textBetween(s, a, b) {
+  const i = s.indexOf(a);
+  if (i < 0) return "";
+  const j = s.indexOf(b, i + a.length);
+  if (j < 0) return "";
+  return s.slice(i + a.length, j);
 }
-function parseAtom(xml){
-  const parts = xml.split("<entry>").slice(1).map(seg=>"<entry>"+seg);
-  return parts.map(e=>({
-    title: textBetween(e,"<title>","</title>").trim(),
-    id: textBetween(e,"<yt:videoId>","</yt:videoId>").trim(),
-    lbc: textBetween(e,"<yt:liveBroadcastContent>","</yt:liveBroadcastContent>").trim(),
+
+function parseAtom(xml) {
+  const parts = xml.split("<entry>").slice(1).map(seg => "<entry>" + seg);
+  return parts.map(e => ({
+    title: textBetween(e, "<title>", "</title>").trim(),
+    id: textBetween(e, "<yt:videoId>", "</yt:videoId>").trim(),
+    lbc: textBetween(e, "<yt:liveBroadcastContent>", "</yt:liveBroadcastContent>").trim()
   }));
 }
-async function atomFallback(){
-  const url = `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(DEFAULT_CHANNEL_ID)}`;
-  const r = await fetch(url, { headers:{ "user-agent":"Mozilla/5.0" } });
-  if (!r.ok) return { live:[], upcoming:[], meta:{ source:"atom", lastError:"atom http" } };
+
+async function atomFallback() {
+  const url = `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(
+    DEFAULT_CHANNEL_ID
+  )}`;
+  const r = await fetch(url, { headers: { "user-agent": "Mozilla/5.0" } });
+  if (!r.ok)
+    return { live: [], upcoming: [], meta: { source: "atom", lastError: "atom http" } };
   const xml = await r.text();
   const entries = parseAtom(xml);
   const nowIso = new Date().toISOString();
-  const live = entries.filter(x=>x.lbc==="live").map(x=>({
-    id:x.id, title:x.title||"Live", startedAt:nowIso, url:`https://www.youtube.com/watch?v=${x.id}`, visibility:"public", lifeCycleStatus:"live"
-  }));
-  const upcoming = entries.filter(x=>x.lbc==="upcoming").map(x=>({
-    title:x.title||"Upcoming", scheduledStart:null, url:`https://www.youtube.com/watch?v=${x.id}`, visibility:"public"
-  }));
-  return { live, upcoming, meta:{ source:"atom", lastError:"live API error" } };
+  const live = entries
+    .filter(x => x.lbc === "live")
+    .map(x => ({
+      id: x.id,
+      title: x.title || "Live",
+      startedAt: nowIso,
+      url: `https://www.youtube.com/watch?v=${x.id}`,
+      visibility: "public",
+      lifeCycleStatus: "live"
+    }));
+  const upcoming = entries
+    .filter(x => x.lbc === "upcoming")
+    .map(x => ({
+      title: x.title || "Upcoming",
+      scheduledStart: null,
+      url: `https://www.youtube.com/watch?v=${x.id}`,
+      visibility: "public"
+    }));
+  return { live, upcoming, meta: { source: "atom", lastError: "live API error" } };
+}
+
+function isUpcomingLike(b) {
+  const life = (b?.status?.lifeCycleStatus || "").toLowerCase();
+  const sched =
+    b?.contentDetails?.scheduledStartTime || b?.snippet?.scheduledStartTime || null;
+  const t = sched ? Date.parse(sched) : NaN;
+  const future = !Number.isNaN(t) && t >= Date.now() - 10 * 60 * 1000;
+  return future || life === "ready" || life === "created" || life === "upcoming";
 }
 
 export default async function handler(req, res) {
@@ -134,7 +169,7 @@ export default async function handler(req, res) {
     const items = await listAllBroadcasts(access);
 
     let live = items
-      .filter(b => (b.status?.lifeCycleStatus||"").toLowerCase() === "live")
+      .filter(b => (b.status?.lifeCycleStatus || "").toLowerCase() === "live")
       .map(b => ({
         id: b.id,
         title: b.snippet?.title || "Live",
@@ -145,10 +180,12 @@ export default async function handler(req, res) {
       }));
 
     let upcoming = items
-      .filter(b => (b.status?.lifeCycleStatus||"").toLowerCase() === "upcoming")
+      .filter(b => isUpcomingLike(b) && (b.status?.lifeCycleStatus || "").toLowerCase() !== "live")
       .map(b => ({
+        id: b.id,
         title: b.snippet?.title || "Upcoming",
-        scheduledStart: b.contentDetails?.scheduledStartTime || null,
+        scheduledStart:
+          b.contentDetails?.scheduledStartTime || b.snippet?.scheduledStartTime || null,
         url: `https://www.youtube.com/watch?v=${b.id}`,
         visibility: b.status?.privacyStatus || "public"
       }));
@@ -170,7 +207,6 @@ export default async function handler(req, res) {
     CACHE.data = { live, upcoming, meta };
     CACHE.ts = now;
     return res.status(200).json(CACHE.data);
-
   } catch (e) {
     meta.lastError = String(e);
     try {
@@ -180,7 +216,11 @@ export default async function handler(req, res) {
       CACHE.backoffUntil = Date.now() + BACKOFF_MS;
       return res.status(200).json(CACHE.data);
     } catch {
-      CACHE.data = { live: [], upcoming: [], meta: { source: "error", lastError: meta.lastError } };
+      CACHE.data = {
+        live: [],
+        upcoming: [],
+        meta: { source: "error", lastError: meta.lastError }
+      };
       CACHE.ts = now;
       CACHE.backoffUntil = Date.now() + BACKOFF_MS;
       return res.status(200).json(CACHE.data);
