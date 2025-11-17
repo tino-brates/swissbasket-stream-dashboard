@@ -22,21 +22,55 @@ body {
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
 }
 
-.wrap{max-width:1200px;margin:0 auto;padding:16px}
-.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
-.header h1{font-size:20px;margin:0}
-.header-actions{display:flex;gap:10px;align-items:center}
-#refreshBtn{background:#222a36;color:#cfe3ff;border:1px solid #2b3442;border-radius:10px;padding:6px 10px;cursor:pointer}
-.lastupdate{opacity:.6;font-variant-numeric:tabular-nums}
+/* ---------- LAYOUT GLOBAL ---------- */
+.wrap{
+  max-width:1200px;
+  margin:0 auto;
+  padding:16px;
+}
 
-/* Sélecteur de langue */
+.header{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:12px;
+  gap:12px;
+}
+.header h1{
+  font-size:20px;
+  margin:0;
+}
+.header-actions{
+  display:flex;
+  gap:10px;
+  align-items:center;
+}
+#refreshBtn{
+  background:#222a36;
+  color:#cfe3ff;
+  border:1px solid #2b3442;
+  border-radius:10px;
+  padding:6px 10px;
+  cursor:pointer;
+}
+.lastupdate{
+  opacity:.6;
+  font-variant-numeric:tabular-nums;
+}
+
 .lang-switch { display:flex; gap:6px; }
 .lang-btn {
-  background:#1f2733; color:#cfe3ff; border:1px solid #2b3442;
-  border-radius:8px; padding:6px 10px; cursor:pointer; font-weight:600;
+  background:#1f2733;
+  color:#cfe3ff;
+  border:1px solid #2b3442;
+  border-radius:8px;
+  padding:6px 10px;
+  cursor:pointer;
+  font-weight:600;
 }
 .lang-btn.active { background:#2a3446; }
 
+/* ---------- PANELS ---------- */
 .panel{
   background: var(--panel);
   border: 1px solid #222632;
@@ -45,19 +79,31 @@ body {
   margin-bottom: 14px;
 }
 
-/* Titres de sections en vert */
 .title{
   color: var(--good) !important;
   font-size: 18px;
   margin: 0 0 10px;
 }
 
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-@media(max-width:900px){.grid{grid-template-columns:1fr}}
+.grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:14px;
+}
+@media(max-width:900px){
+  .grid{
+    grid-template-columns:1fr;
+  }
+}
 
-.list{display:flex;flex-direction:column;gap:10px}
+/* ---------- LISTES / ITEMS ---------- */
+.list{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
 
-/* Ligne générique (4 colonnes) */
+/* Layout desktop: 4 colonnes */
 .item{
   display:grid;
   grid-template-columns: 1.2fr 1fr auto auto;
@@ -68,6 +114,8 @@ body {
   border-radius:14px;
   padding:12px;
 }
+
+/* Boutons "tag" */
 .item .tag{
   background:#1f2733;
   border:1px solid #2b3442;
@@ -75,35 +123,51 @@ body {
   padding:4px 10px;
   text-decoration:none;
   color:#cfe3ff;
+  font-size:0.85rem;
 }
+
 .muted{color:var(--sub)}
 
-/* Santé YouTube */
 .badge{
   border-radius:9999px;
   padding:4px 10px;
   border:1px solid #2b3442;
   background:#1f2733;
+  font-size:0.85rem;
 }
 .status-perfect{background:#11261c;border-color:#1c3b2b;color:#7ef2b1}
 .status-good{background:#2a2511;border-color:#3b3220;color:#f2c14e}
 .status-bad{background:#2a1414;border-color:#3b2222;color:#ef8a8a}
 .status-nodata{background:#1f2430;border-color:#2b3442;color:#aeb8c7}
 
-.upcoming-head{display:flex;justify-content:space-between;align-items:center;gap:12px}
-.tabs{display:flex;gap:8px}
+/* ---------- UPCOMING TABLE ---------- */
+.upcoming-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+}
+.tabs{
+  display:flex;
+  gap:8px;
+}
 .tab{
   background:#1f2532;
   border:1px solid #2b3442;
   color:#cfe3ff;
   border-radius:10px;
   padding:6px 10px;
-  cursor:pointer
+  cursor:pointer;
+  font-size:0.85rem;
 }
 .tab.active{background:#263044}
 
-/* Filtres + tableau */
-.filters{display:flex;gap:10px;align-items:center;margin:10px 0}
+.filters{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  margin:10px 0;
+}
 .filters select,
 .filters input{
   background:#1c222d;
@@ -111,30 +175,51 @@ body {
   color:#e6e7eb;
   border-radius:10px;
   padding:8px 10px;
+  font-size:0.9rem;
 }
-.table-wrap{overflow:auto;border:1px solid #222632;border-radius:12px}
 
-.table{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
+.table-wrap{
+  overflow:auto;
+  border:1px solid #222632;
+  border-radius:12px;
+}
+
+.table{
+  width:100%;
+  border-collapse:separate;
+  border-spacing:0;
+  table-layout:fixed;
+  font-size:0.9rem;
+}
 .table th,
 .table td{
   padding:10px 12px;
   border-bottom:1px solid #232834;
   text-align:left;
   white-space:normal;
-  word-break:break-word
+  word-break:break-word;
 }
 .table thead th{
   position:sticky;
   top:0;
-  background:#1a1f29
+  background:#1a1f29;
+  z-index:1;
 }
 
-/* badges couleurs pour Keemotion */
-.tag-ok{background:rgba(46,160,67,.15);border:1px solid rgba(46,160,67,.35)}
-.tag-warn{background:rgba(242,153,0,.18);border:1px solid rgba(242,153,0,.45)}
-.tag-error{background:rgba(229,83,75,.18);border:1px solid rgba(229,83,75,.45)}
+/* ---------- TAG STATUTS ---------- */
+.tag-ok{
+  background:rgba(46,160,67,.15);
+  border:1px solid rgba(46,160,67,.35);
+}
+.tag-warn{
+  background:rgba(242,153,0,.18);
+  border:1px solid rgba(242,153,0,.45);
+}
+.tag-error{
+  background:rgba(229,83,75,.18);
+  border:1px solid rgba(229,83,75,.45);
+}
 
-/* Pastille + badge LIVE */
 .live-pill{
   font-weight:800;
   letter-spacing:.08em;
@@ -143,6 +228,7 @@ body {
   border-radius:9999px;
   padding:.15rem .6rem;
   white-space:nowrap;
+  font-size:0.8rem;
 }
 .dot-live{
   display:inline-block;
@@ -154,13 +240,11 @@ body {
   margin-right:.4rem;
 }
 
-/* Centrage cellule du badge */
 .cell-center{
   justify-self:center;
   text-align:center;
 }
 
-/* UPCOMING lisible (grisé mais pas délavé) */
 .upcoming-item{
   background:#1a1f29;
   border-color:#232a36;
@@ -170,35 +254,166 @@ body {
   font-variant-numeric:tabular-nums;
 }
 
-/* Bouton "lien" pour le nom cliquable dans Streamkeys */
-.link-like{
-  background:none;
-  border:none;
-  padding:0;
-  margin:0;
-  text-align:left;
-  color:var(--brand);
-  cursor:pointer;
-  font-weight:600;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
+/* ---------- ALERTES (popups) ---------- */
+.alerts{
+  position:fixed;
+  top:12px;
+  right:12px;
+  z-index:60;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  max-width:360px;
 }
-.link-like:hover{
-  text-decoration:underline;
+.alert{
+  background:#2a2511;
+  border:1px solid var(--ok);
+  color:var(--ok);
+  border-radius:10px;
+  padding:8px 10px;
+  font-size:13px;
+  box-shadow:0 10px 30px rgba(0,0,0,.6);
+  display:flex;
+  gap:8px;
+  align-items:flex-start;
+}
+.alert-icon{
+  font-size:16px;
+  line-height:1.1;
+  margin-top:2px;
+}
+.alert-body{
+  flex:1;
+  min-width:0;
+}
+.alert-title{
+  font-weight:600;
+  margin-bottom:2px;
+}
+.alert-meta{
+  font-size:11px;
+  opacity:.8;
+}
+.alert-close{
+  background:transparent;
+  border:none;
+  color:var(--ok);
+  cursor:pointer;
+  font-size:14px;
+  line-height:1;
+  padding:0 0 0 4px;
 }
 
-/* Pills statut streamkey */
-.pill-status{
-  font-size:0.8rem;
+/* ---------- ITEM EN RETARD (LIVE BOX & STREAMKEYS) ---------- */
+.item-late{
+  border-color:var(--ok);
+  box-shadow:0 0 0 1px rgba(255,209,102,.45);
+  animation:lateBlink 1s infinite alternate;
 }
-.pill-live{
-  background:#2a1414;
-  border-color:#3b2222;
-  color:#ef8a8a;
+@keyframes lateBlink{
+  from{box-shadow:0 0 0 1px rgba(255,209,102,.25);}
+  to{box-shadow:0 0 0 4px rgba(255,209,102,.8);}
 }
-.pill-upcoming{
-  background:#1f2532;
-  border-color:#2b3442;
-  color:#cfe3ff;
+
+/* ---------- RESPONSIVE : TABLETTES / MOBILES ---------- */
+@media(max-width:900px){
+  .wrap{
+    padding:10px;
+  }
+
+  .header{
+    flex-direction:column;
+    align-items:flex-start;
+  }
+
+  .header-actions{
+    width:100%;
+    justify-content:space-between;
+    flex-wrap:wrap;
+  }
+
+  .title{
+    font-size:16px;
+  }
+
+  .filters{
+    flex-direction:column;
+    align-items:stretch;
+  }
+
+  .filters select,
+  .filters input{
+    width:100%;
+  }
+
+  .table{
+    font-size:0.85rem;
+  }
+}
+
+@media(max-width:700px){
+  /* Layout téléphone 9:16 */
+
+  .wrap{
+    padding:8px;
+  }
+
+  .header h1{
+    font-size:18px;
+  }
+
+  #refreshBtn{
+    padding:6px 12px;
+    font-size:0.9rem;
+  }
+
+  .lang-switch{
+    gap:4px;
+  }
+  .lang-btn{
+    padding:4px 8px;
+    font-size:0.8rem;
+  }
+
+  /* Les items deviennent verticals */
+  .item{
+    grid-template-columns: 1fr;
+    align-items:flex-start;
+    row-gap:6px;
+  }
+
+  .cell-center{
+    justify-self:flex-start;
+    text-align:left;
+  }
+
+  .item .date-soft{
+    font-size:0.8rem;
+  }
+
+  .item .tag{
+    font-size:0.8rem;
+  }
+
+  .live-pill{
+    font-size:0.75rem;
+  }
+
+  /* Alerts plein écran en bas si nécessaire */
+  .alerts{
+    top:auto;
+    bottom:8px;
+    right:8px;
+    left:8px;
+    max-width:none;
+  }
+  .alert{
+    width:100%;
+  }
+
+  /* Table plus compacte */
+  .table th,
+  .table td{
+    padding:8px 8px;
+  }
 }
