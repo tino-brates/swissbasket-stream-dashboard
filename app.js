@@ -414,12 +414,12 @@ function renderLive(){
           <div class="muted small">${t('visibility_label')}: <strong>${visLabel}</strong></div>
           <div class="live-buttons">
             <button type="button"
-                    class="tag live-vis-btn ${vis === 'public' ? 'live-vis-active' : 'live-vis-inactive'}"
+                    class="tag live-vis-btn ${vis === 'public' ? 'live-vis-inactive' : 'live-vis-active'}"
                     onclick="event.stopPropagation(); setLiveVisibility('${x.id}','public');">
               ${t('set_public')}
             </button>
             <button type="button"
-                    class="tag live-vis-btn ${vis === 'private' ? 'live-vis-active' : 'live-vis-inactive'}"
+                    class="tag live-vis-btn ${vis === 'private' ? 'live-vis-inactive' : 'live-vis-active'}"
                     onclick="event.stopPropagation(); setLiveVisibility('${x.id}','private');">
               ${t('set_private')}
             </button>
@@ -485,12 +485,12 @@ function renderLive(){
         <div class="muted small">${t('visibility_label')}: <strong>${visLabel}</strong></div>
         <div class="live-buttons">
           <button type="button"
-                  class="tag live-vis-btn ${x.visibility === 'public' ? 'live-vis-active' : 'live-vis-inactive'}"
+                  class="tag live-vis-btn ${x.visibility === 'public' ? 'live-vis-inactive' : 'live-vis-active'}"
                   onclick="event.stopPropagation(); setLiveVisibility('${x.id}','public');">
             ${t('set_public')}
           </button>
           <button type="button"
-                  class="tag live-vis-btn ${x.visibility === 'private' ? 'live-vis-active' : 'live-vis-inactive'}"
+                  class="tag live-vis-btn ${x.visibility === 'private' ? 'live-vis-inactive' : 'live-vis-active'}"
                   onclick="event.stopPropagation(); setLiveVisibility('${x.id}','private');">
             ${t('set_private')}
           </button>
