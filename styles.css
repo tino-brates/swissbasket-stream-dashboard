@@ -321,12 +321,21 @@ body {
 
 /* Cartes upcoming (mobile) */
 .upcoming-card{
-  /* .item a déjà le style de base */
 }
 
 /* ---------- BARRE DE COMMANDES LIVE ---------- */
+.live-item{
+  cursor:pointer;
+  grid-template-columns: 1fr;
+}
+.live-item-header{
+  display:grid;
+  grid-template-columns: 1.2fr 1fr auto auto;
+  gap:10px;
+  align-items:center;
+}
 .live-controls{
-  margin-top:4px;
+  margin-top:8px;
   display:flex;
   flex-direction:column;
   gap:4px;
@@ -343,6 +352,19 @@ body {
   background:#2a1414 !important;
   border-color:var(--bad) !important;
   color:#ffd3d3 !important;
+}
+
+/* boutons visibilité actif / inactif */
+.live-vis-btn{
+  transition:background .15s ease, border-color .15s ease, opacity .15s ease;
+}
+.live-vis-active{
+  background:#2a3446 !important;
+  border-color:var(--brand) !important;
+  font-weight:600;
+}
+.live-vis-inactive{
+  opacity:0.55;
 }
 
 /* ---------- POPUP CONFIRMATION FULL SCREEN ---------- */

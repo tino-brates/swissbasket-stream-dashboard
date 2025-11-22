@@ -122,40 +122,21 @@ const state = {
   filterProd: 'ALL',
   search: '',
   activeUpcomingTab: 'RANGE1',
+  expandedLiveId: null,
   data: {
-    filterProd: 'ALL',
-    search: '',
-    activeUpcomingTab: 'RANGE1',
-    data: {
-      live: [],
-      ytUpcoming: [],
-      issues: [],
-      upcoming: [],
-      health: [],
-      ytMeta: { source: '', quotaBackoffUntil: 0, lastError: '' },
-      streamKeys: []
-    }
+    live: [],
+    ytUpcoming: [],
+    issues: [],
+    upcoming: [],
+    health: [],
+    ytMeta: { source: '', quotaBackoffUntil: 0, lastError: '' },
+    streamKeys: []
   }
 };
 
-// correction: on veut simplement :
 const CH_TZ = 'Europe/Zurich';
 const LATE_GRACE_MIN = 3;
 const dismissedLateKeys = new Set();
-
-// on réécrit correctement l'état principal
-state.filterProd = 'ALL';
-state.search = '';
-state.activeUpcomingTab = 'RANGE1';
-state.data = {
-  live: [],
-  ytUpcoming: [],
-  issues: [],
-  upcoming: [],
-  health: [],
-  ytMeta: { source: '', quotaBackoffUntil: 0, lastError: '' },
-  streamKeys: []
-};
 
 /* --- utilitaires temps / dates --- */
 function parseSheetDate(input) {
@@ -189,7 +170,6 @@ function withinNextMinutesSheet(d, min) {
   const now = nowMs();
   return t >= now && t <= now + min * 60000;
 }
-function isInFutureSheet(d) { return parseSheetDate(d).getTime() >= nowMs(); }
 function withinNextMinutesUTC(d, min) {
   const t = parseUTCDate(d).getTime();
   const now = nowMs();
@@ -291,7 +271,7 @@ function getLateEventsForAlerts(){
   return getLateEventsRaw().filter(ev => !dismissedLateKeys.has(lateKey(ev)));
 }
 
-/* --------- RENDER LATE ALERT POPUPS --------- */
+/* --------- ALERTES RETARD --------- */
 function dismissLateAlert(key){
   dismissedLateKeys.add(key);
   renderLateAlerts();
@@ -320,7 +300,7 @@ function renderLateAlerts(){
   });
 }
 
-/* --------- RENDER LATE CARD IN LIVE BOX --------- */
+/* --------- ITEM LATE DANS LIVE --------- */
 function renderLateCard(ev, box){
   const when = ev.scheduledStart ? `${fmtDateUTC(ev.scheduledStart)} ${fmtTimeUTC(ev.scheduledStart)}` : '';
   const el = document.createElement('div');
@@ -392,6 +372,11 @@ async function confirmEndLive(){
   }
 }
 
+function toggleLiveControls(id){
+  state.expandedLiveId = (state.expandedLiveId === id ? null : id);
+  renderLive();
+}
+
 /* ---------------- RENDERERS ---------------- */
 function renderLive(){
   const box=document.getElementById('liveNow');
@@ -406,31 +391,48 @@ function renderLive(){
       const vis = (x.visibility || '').toLowerCase();
       const visLabel = vis === 'private' ? t('visibility_private') : t('visibility_public');
       const safeTitle = (x.title || '').replace(/'/g,"\\'");
+      const expanded = state.expandedLiveId === x.id;
 
-      const el=document.createElement('div');el.className='item';
+      const el=document.createElement('div');
+      el.className='item live-item' + (expanded ? ' live-item-expanded' : '');
       el.innerHTML=`
-        <div style="display:flex;flex-direction:column;gap:6px;min-width:0;">
+        <div class="live-item-header">
           <div style="display:flex;align-items:center;gap:.6rem;min-width:0;">
             <span class="dot-live"></span>
             <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.title}</div>
             <span class="muted" style="font-variant-numeric:tabular-nums;">${timer}</span>
             ${isPriv?`<span class="tag" style="background:#555;border-color:#444;">${t('private')}</span>`:""}
           </div>
-          <div class="live-controls">
-            <div class="muted small">${t('visibility_label')}: <strong>${visLabel}</strong></div>
-            <div class="live-buttons">
-              <button type="button" class="tag" onclick="setLiveVisibility('${x.id}','public')">${t('set_public')}</button>
-              <button type="button" class="tag" onclick="setLiveVisibility('${x.id}','private')">${t('set_private')}</button>
-              <button type="button" class="tag tag-danger" onclick="openEndLiveConfirm('${x.id}','${safeTitle}')">${t('end_live')}</button>
-            </div>
+          <div class="cell-center">
+            <span class="live-pill">${t('status_live')}${isPreview?' (preview)':''}</span>
+          </div>
+          <div class="date-soft"></div>
+          <a class="tag" href="${x.url}" target="_blank" style="justify-self:end;" onclick="event.stopPropagation();">${t('open')}</a>
+        </div>
+        ${expanded ? `
+        <div class="live-controls">
+          <div class="muted small">${t('visibility_label')}: <strong>${visLabel}</strong></div>
+          <div class="live-buttons">
+            <button type="button"
+                    class="tag live-vis-btn ${vis === 'public' ? 'live-vis-active' : 'live-vis-inactive'}"
+                    onclick="event.stopPropagation(); setLiveVisibility('${x.id}','public');">
+              ${t('set_public')}
+            </button>
+            <button type="button"
+                    class="tag live-vis-btn ${vis === 'private' ? 'live-vis-active' : 'live-vis-inactive'}"
+                    onclick="event.stopPropagation(); setLiveVisibility('${x.id}','private');">
+              ${t('set_private')}
+            </button>
+            <button type="button"
+                    class="tag tag-danger"
+                    onclick="event.stopPropagation(); openEndLiveConfirm('${x.id}','${safeTitle}');">
+              ${t('end_live')}
+            </button>
           </div>
         </div>
-        <div class="cell-center">
-          <span class="live-pill">${t('status_live')}${isPreview?' (preview)':''}</span>
-        </div>
-        <div></div>
-        <a class="tag" href="${x.url}" target="_blank" style="justify-self:end;">${t('open')}</a>
+        ` : ``}
       `;
+      el.addEventListener('click', ()=>{ toggleLiveControls(x.id); });
       box.appendChild(el);
     });
 
@@ -694,7 +696,6 @@ async function loadCalendars(){
   renderUpcoming(); setLastUpdate();
 }
 
-/* 🔧 YouTube: live + upcoming */
 async function loadYouTube(){
   let payload = await fetchJSON('/api/live').catch(()=>({
     live:[],
