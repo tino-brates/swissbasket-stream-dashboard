@@ -688,7 +688,11 @@ function setLastUpdate(){
 }
 
 /* ---------------- DATA LOADING ---------------- */
-async function fetchJSON(url){const r=await fetch(url,{cache:'no-store'});if(!r.ok)throw new Error('http');return await r.json()}
+async function fetchJSON(url){
+  const r = await fetch(url); // <<< plus de cache:'no-store'
+  if(!r.ok) throw new Error('http');
+  return await r.json();
+}
 
 async function loadCalendars(){
   const upcoming=await fetchJSON('/api/upcoming');

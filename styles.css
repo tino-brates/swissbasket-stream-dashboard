@@ -506,7 +506,6 @@ body {
     font-size:0.75rem;
   }
 
-  /* Alerts plein écran en bas si nécessaire */
   .alerts{
     top:auto;
     bottom:8px;
@@ -518,13 +517,11 @@ body {
     width:100%;
   }
 
-  /* Table plus compacte */
   .table th,
   .table td{
     padding:8px 8px;
   }
 
-  /* Upcoming: on masque le tableau et on montre les cartes */
   .desktop-only { display:none; }
   .mobile-only  { display:flex; flex-direction:column; gap:8px; }
 }
