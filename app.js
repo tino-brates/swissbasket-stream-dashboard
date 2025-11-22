@@ -202,11 +202,15 @@ function endOfNextWeekSunday(dt) {
 }
 
 function pad2(n){return n<10?`0${n}`:`${n}`}
+
+/* ⏱️ TIMER LIVE EN HH:MM:SS */
 function elapsedHM(start){
-  if(!start) return "";
-  const secs=Math.max(0,Math.floor((Date.now()-parseUTCDate(start).getTime())/1000));
-  const h=Math.floor(secs/3600);const m=Math.floor((secs%3600)/60);const s=secs%60;
-  return h>0?`${pad2(h)}:${pad2(m)}`:`${pad2(m)}:${pad2(s)}`;
+  if(!start) return "00:00:00";
+  const secs = Math.max(0, Math.floor((Date.now() - parseUTCDate(start).getTime()) / 1000));
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  return `${pad2(h)}:${pad2(m)}:${pad2(s)}`;
 }
 
 function normProd(s){
