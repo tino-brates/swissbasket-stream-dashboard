@@ -29,7 +29,17 @@ const I18N = {
     today_streamkeys: "Streamkeys du jour",
     status_live: "En direct",
     status_upcoming: "Prévu",
-    no_streamkeys_today: "Aucun événement prévu aujourd'hui."
+    no_streamkeys_today: "Aucun événement prévu aujourd'hui.",
+    visibility_label: "Visibilité",
+    visibility_public: "Publique",
+    visibility_private: "Privée",
+    set_public: "Mettre en public",
+    set_private: "Mettre en privé",
+    end_live: "Terminer le live",
+    confirm: "Confirmer",
+    cancel: "Annuler",
+    confirm_end_title: "Terminer ce live ?",
+    confirm_end_body: "Es-tu sûr de vouloir terminer le live « %TITLE% » ? Cette action est définitive."
   },
   en: {
     title: "SwissBasket Streaming",
@@ -61,7 +71,17 @@ const I18N = {
     today_streamkeys: "Today's streamkeys",
     status_live: "Live",
     status_upcoming: "Upcoming",
-    no_streamkeys_today: "No events today."
+    no_streamkeys_today: "No events today.",
+    visibility_label: "Visibility",
+    visibility_public: "Public",
+    visibility_private: "Private",
+    set_public: "Set public",
+    set_private: "Set private",
+    end_live: "End live",
+    confirm: "Confirm",
+    cancel: "Cancel",
+    confirm_end_title: "End this live?",
+    confirm_end_body: "Are you sure you want to end the live “%TITLE%”? This cannot be undone."
   }
 };
 
@@ -83,12 +103,19 @@ function applyI18n(){
   });
 }
 
+let pendingEndLive = null;
+
 window.addEventListener("DOMContentLoaded", ()=>{
   const fr = document.getElementById("langFr");
   const en = document.getElementById("langEn");
   if (fr) fr.addEventListener("click",()=>{ LANG="fr"; localStorage.setItem("LANG","fr"); applyI18n(); renderAll(); });
   if (en) en.addEventListener("click",()=>{ LANG="en"; localStorage.setItem("LANG","en"); applyI18n(); renderAll(); });
   applyI18n();
+
+  const cCancel = document.getElementById('confirmCancel');
+  const cOk = document.getElementById('confirmOk');
+  if (cCancel) cCancel.addEventListener('click', closeEndLiveConfirm);
+  if (cOk) cOk.addEventListener('click', confirmEndLive);
 });
 
 const state = {
@@ -96,21 +123,41 @@ const state = {
   search: '',
   activeUpcomingTab: 'RANGE1',
   data: {
-    live: [],
-    ytUpcoming: [],
-    issues: [],
-    upcoming: [],
-    health: [],
-    ytMeta: { source: '', quotaBackoffUntil: 0, lastError: '' },
-    streamKeys: []
+    filterProd: 'ALL',
+    search: '',
+    activeUpcomingTab: 'RANGE1',
+    data: {
+      live: [],
+      ytUpcoming: [],
+      issues: [],
+      upcoming: [],
+      health: [],
+      ytMeta: { source: '', quotaBackoffUntil: 0, lastError: '' },
+      streamKeys: []
+    }
   }
 };
 
+// correction: on veut simplement :
 const CH_TZ = 'Europe/Zurich';
 const LATE_GRACE_MIN = 3;
-const LATE_STREAMKEY_GRACE_MIN = 2;
 const dismissedLateKeys = new Set();
 
+// on réécrit correctement l'état principal
+state.filterProd = 'ALL';
+state.search = '';
+state.activeUpcomingTab = 'RANGE1';
+state.data = {
+  live: [],
+  ytUpcoming: [],
+  issues: [],
+  upcoming: [],
+  health: [],
+  ytMeta: { source: '', quotaBackoffUntil: 0, lastError: '' },
+  streamKeys: []
+};
+
+/* --- utilitaires temps / dates --- */
 function parseSheetDate(input) {
   if (input instanceof Date) return input;
   if (typeof input === 'string') {
@@ -222,7 +269,7 @@ function inActiveTabRange(d){
 
 /* --------- LATE EVENTS DETECTION --------- */
 function lateKey(ev){
-  return ev.url || ev.id || (ev.title + '|' + (ev.scheduledStart || ev.when || ''));
+  return ev.url || ev.id || (ev.title + '|' + (ev.scheduledStart || ''));
 }
 
 function getLateEventsRaw(){
@@ -230,7 +277,7 @@ function getLateEventsRaw(){
   return (state.data.ytUpcoming || []).filter(ev=>{
     if(!ev || !ev.scheduledStart) return false;
     const vis = (ev.visibility || '').toLowerCase();
-    if(vis && vis !== 'public' && vis !== 'unlisted') return false;
+    if(vis && vis !== 'public') return false;
     const t = parseUTCDate(ev.scheduledStart).getTime();
     return t + LATE_GRACE_MIN*60000 < now;
   });
@@ -244,25 +291,6 @@ function getLateEventsForAlerts(){
   return getLateEventsRaw().filter(ev => !dismissedLateKeys.has(lateKey(ev)));
 }
 
-/* --------- LATE STREAMKEYS DETECTION --------- */
-function isLateStreamKey(it){
-  if(!it || !it.when) return false;
-  const status = (it.status || '').toLowerCase();
-  if(status === 'live') return false;
-  const visibility = (it.privacy || '').toLowerCase();
-  if(visibility === 'private') return false;
-  const t = parseUTCDate(it.when).getTime();
-  return t + LATE_STREAMKEY_GRACE_MIN*60000 < nowMs();
-}
-
-function getLateStreamKeysRaw(){
-  return (state.data.streamKeys || []).filter(isLateStreamKey);
-}
-
-function getLateStreamKeysForAlerts(){
-  return getLateStreamKeysRaw().filter(ev => !dismissedLateKeys.has(lateKey(ev)));
-}
-
 /* --------- RENDER LATE ALERT POPUPS --------- */
 function dismissLateAlert(key){
   dismissedLateKeys.add(key);
@@ -272,28 +300,19 @@ function dismissLateAlert(key){
 function renderLateAlerts(){
   const container = document.getElementById('alertsContainer');
   if(!container) return;
-  const lateYT = getLateEventsForAlerts();
-  const lateSK = getLateStreamKeysForAlerts();
-  const late = [...lateYT, ...lateSK];
+  const late = getLateEventsForAlerts();
   container.innerHTML = '';
-  if(!late.length) return;
-
   late.forEach(ev=>{
     const key = lateKey(ev);
     const keyJs = key.replace(/'/g,"\\'");
-    const rawWhen = ev.scheduledStart || ev.when || null;
-    const whenTxt = rawWhen ? `${fmtDateUTC(rawWhen)} ${fmtTimeUTC(rawWhen)}` : '';
-    const msg = LANG === 'fr'
-      ? "Attention, ce stream semble avoir un souci (retard)."
-      : "Warning, this stream seems to have an issue (late start).";
-
+    const whenTxt = ev.scheduledStart ? `${fmtDateUTC(ev.scheduledStart)} ${fmtTimeUTC(ev.scheduledStart)}` : '';
     const div = document.createElement('div');
     div.className='alert';
     div.innerHTML = `
       <div class="alert-icon">⚠️</div>
       <div class="alert-body">
         <div class="alert-title">${ev.title}</div>
-        <div class="alert-meta">${msg}${whenTxt ? ` • ${whenTxt}` : ''}</div>
+        <div class="alert-meta">${t('status_upcoming')} • ${whenTxt}</div>
       </div>
       <button class="alert-close" onclick="dismissLateAlert('${keyJs}')">×</button>
     `;
@@ -303,8 +322,7 @@ function renderLateAlerts(){
 
 /* --------- RENDER LATE CARD IN LIVE BOX --------- */
 function renderLateCard(ev, box){
-  const rawWhen = ev.scheduledStart || ev.when || null;
-  const when = rawWhen ? `${fmtDateUTC(rawWhen)} ${fmtTimeUTC(rawWhen)}` : '';
+  const when = ev.scheduledStart ? `${fmtDateUTC(ev.scheduledStart)} ${fmtTimeUTC(ev.scheduledStart)}` : '';
   const el = document.createElement('div');
   el.className = 'item item-late';
   el.innerHTML = `
@@ -321,6 +339,59 @@ function renderLateCard(ev, box){
   box.appendChild(el);
 }
 
+/* --------- COMMANDES LIVE --------- */
+async function setLiveVisibility(id, privacy){
+  if(!id || !privacy) return;
+  try{
+    await fetch('/api/live-control', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ action:'setVisibility', id, privacy })
+    });
+    await loadYouTube();
+  }catch(e){
+    console.error('setLiveVisibility error', e);
+  }
+}
+
+function openEndLiveConfirm(id, title){
+  pendingEndLive = { id, title };
+  const overlay = document.getElementById('confirmOverlay');
+  const titleEl = document.getElementById('confirmTitle');
+  const textEl = document.getElementById('confirmText');
+  if(titleEl) titleEl.textContent = t('confirm_end_title');
+  if(textEl){
+    const base = t('confirm_end_body');
+    textEl.textContent = base.replace('%TITLE%', title || '');
+  }
+  if(overlay) overlay.classList.add('show');
+}
+
+function closeEndLiveConfirm(){
+  const overlay = document.getElementById('confirmOverlay');
+  if(overlay) overlay.classList.remove('show');
+}
+
+async function confirmEndLive(){
+  if(!pendingEndLive){
+    closeEndLiveConfirm();
+    return;
+  }
+  const id = pendingEndLive.id;
+  pendingEndLive = null;
+  closeEndLiveConfirm();
+  try{
+    await fetch('/api/live-control', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ action:'endLive', id })
+    });
+    await loadYouTube();
+  }catch(e){
+    console.error('endLive error', e);
+  }
+}
+
 /* ---------------- RENDERERS ---------------- */
 function renderLive(){
   const box=document.getElementById('liveNow');
@@ -332,14 +403,27 @@ function renderLive(){
       const isPriv = (x.visibility||"").toLowerCase()==="private";
       const isPreview = (x.lifeCycleStatus||"") === "testing";
       const timer = elapsedHM(x.startedAt);
+      const vis = (x.visibility || '').toLowerCase();
+      const visLabel = vis === 'private' ? t('visibility_private') : t('visibility_public');
+      const safeTitle = (x.title || '').replace(/'/g,"\\'");
 
       const el=document.createElement('div');el.className='item';
       el.innerHTML=`
-        <div style="display:flex;align-items:center;gap:.6rem;min-width:0;">
-          <span class="dot-live"></span>
-          <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.title}</div>
-          <span class="muted" style="font-variant-numeric:tabular-nums;">${timer}</span>
-          ${isPriv?`<span class="tag" style="background:#555;border-color:#444;">${t('private')}</span>`:""}
+        <div style="display:flex;flex-direction:column;gap:6px;min-width:0;">
+          <div style="display:flex;align-items:center;gap:.6rem;min-width:0;">
+            <span class="dot-live"></span>
+            <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.title}</div>
+            <span class="muted" style="font-variant-numeric:tabular-nums;">${timer}</span>
+            ${isPriv?`<span class="tag" style="background:#555;border-color:#444;">${t('private')}</span>`:""}
+          </div>
+          <div class="live-controls">
+            <div class="muted small">${t('visibility_label')}: <strong>${visLabel}</strong></div>
+            <div class="live-buttons">
+              <button type="button" class="tag" onclick="setLiveVisibility('${x.id}','public')">${t('set_public')}</button>
+              <button type="button" class="tag" onclick="setLiveVisibility('${x.id}','private')">${t('set_private')}</button>
+              <button type="button" class="tag tag-danger" onclick="openEndLiveConfirm('${x.id}','${safeTitle}')">${t('end_live')}</button>
+            </div>
+          </div>
         </div>
         <div class="cell-center">
           <span class="live-pill">${t('status_live')}${isPreview?' (preview)':''}</span>
@@ -457,7 +541,9 @@ function renderHealth(){
 
 function renderUpcoming(){
   const tbody=document.getElementById('upcomingBody');
+  const mob = document.getElementById('upcomingMobile');
   const search=state.search.trim().toLowerCase();
+
   const rows=state.data.upcoming
     .map(x=>({...x,prod:normProd(x.production),group:prodGroup(normProd(x.production))}))
     .filter(x=>x.prod)
@@ -467,21 +553,50 @@ function renderUpcoming(){
       if(!search) return true;
       return [x.teamA,x.teamB,x.arena,x.production,x.competition].some(v=>(v||'').toLowerCase().includes(search));
     });
-  tbody.innerHTML='';
-  rows.sort((a,b)=>parseSheetDate(a.datetime)-parseSheetDate(b.datetime)).forEach(x=>{
-    const dt=parseSheetDate(x.datetime);
-    const tr=document.createElement('tr');
-    tr.innerHTML=`
-      <td>${fmtDateCH(dt)}</td>
-      <td>${fmtTimeCH(dt)}</td>
-      <td>${x.competition||''}</td>
-      <td>${x.teamA}</td>
-      <td>${x.teamB}</td>
-      <td>${x.arena}</td>
-      <td>${x.prod}</td>
-      <td>${x.youtubeEventId?`<a target="_blank" href="https://www.youtube.com/live/${x.youtubeEventId}">${x.youtubeEventId}</a>`:''}</td>`;
-    tbody.appendChild(tr);
-  });
+
+  const sorted = rows.sort((a,b)=>parseSheetDate(a.datetime)-parseSheetDate(b.datetime));
+
+  if(tbody){
+    tbody.innerHTML='';
+    sorted.forEach(x=>{
+      const dt=parseSheetDate(x.datetime);
+      const tr=document.createElement('tr');
+      tr.innerHTML=`
+        <td>${fmtDateCH(dt)}</td>
+        <td>${fmtTimeCH(dt)}</td>
+        <td>${x.competition||''}</td>
+        <td>${x.teamA}</td>
+        <td>${x.teamB}</td>
+        <td>${x.arena}</td>
+        <td>${x.prod}</td>
+        <td>${x.youtubeEventId?`<a target="_blank" href="https://www.youtube.com/live/${x.youtubeEventId}">${x.youtubeEventId}</a>`:''}</td>`;
+      tbody.appendChild(tr);
+    });
+  }
+
+  if(mob){
+    mob.innerHTML='';
+    sorted.forEach(x=>{
+      const dt=parseSheetDate(x.datetime);
+      const card=document.createElement('div');
+      card.className='item upcoming-card';
+      card.innerHTML=`
+        <div style="font-weight:600;">
+          ${fmtDateCH(dt)} • ${fmtTimeCH(dt)}
+        </div>
+        <div class="muted" style="font-size:.8rem;">
+          ${x.competition||''}
+        </div>
+        <div style="margin-top:4px;">
+          ${x.teamA} vs ${x.teamB}
+        </div>
+        <div class="muted" style="font-size:.8rem;margin-top:4px;">
+          ${x.arena} • ${x.prod}
+        </div>
+      `;
+      mob.appendChild(card);
+    });
+  }
 }
 
 /* --------- COPY STREAMKEY --------- */
@@ -536,10 +651,8 @@ function renderStreamKeys(){
       : `<span class="tag">${t('status_upcoming')}</span>`;
     const whenTxt = it.when ? `${fmtDateUTC(it.when)} ${fmtTimeUTC(it.when)}` : '';
     const safeKey = (it.streamKey || '').replace(/'/g,"\\'");
-    const isLate = isLateStreamKey(it);
-    const itemClass = 'item' + (isLate ? ' item-late' : '');
     const el = document.createElement('div');
-    el.className = itemClass;
+    el.className = 'item';
     el.innerHTML = `
       <div style="display:flex;flex-direction:column;gap:4px;min-width:0;">
         <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${it.title}</div>
@@ -581,7 +694,7 @@ async function loadCalendars(){
   renderUpcoming(); setLastUpdate();
 }
 
-/* 🔧 YouTube live + upcoming */
+/* 🔧 YouTube: live + upcoming */
 async function loadYouTube(){
   let payload = await fetchJSON('/api/live').catch(()=>({
     live:[],
@@ -658,4 +771,4 @@ setInterval(loadYouTube, 60000);
 setInterval(loadIssues, 60000);
 setInterval(loadHealth, 30000);
 setInterval(loadStreamKeys, 60000);
-setInterval(()=>{ if (state.data.live && state.data.live.length){ renderLive(); renderLateAlerts(); } }, 1000);
+setInterval(()=>{ if (state.data.live && state.data.live.length){ renderLive(); } }, 1000);

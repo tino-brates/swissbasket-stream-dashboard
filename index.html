@@ -8,6 +8,21 @@
 </head>
 <body>
   <div id="alertsContainer" class="alerts"></div>
+  
+  <div id="confirmOverlay" class="confirm-overlay">
+    <div class="confirm-dialog">
+      <div class="confirm-title" id="confirmTitle" data-i18n="confirm_end_title">
+        Terminer ce live ?
+      </div>
+      <p class="confirm-text" id="confirmText" data-i18n="confirm_end_body">
+        Es-tu sûr de vouloir terminer ce live ?
+      </p>
+      <div class="confirm-actions">
+        <button id="confirmCancel" class="btn-secondary" data-i18n="cancel">Annuler</button>
+        <button id="confirmOk" class="btn-danger" data-i18n="confirm">Confirmer</button>
+      </div>
+    </div>
+  </div>
 
   <div class="wrap">
     <header class="header">

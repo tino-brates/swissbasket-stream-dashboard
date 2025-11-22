@@ -304,7 +304,7 @@ body {
   padding:0 0 0 4px;
 }
 
-/* ---------- ITEM EN RETARD (LIVE BOX & STREAMKEYS) ---------- */
+/* ---------- ITEM EN RETARD ---------- */
 .item-late{
   border-color:var(--ok);
   box-shadow:0 0 0 1px rgba(255,209,102,.45);
@@ -313,6 +313,91 @@ body {
 @keyframes lateBlink{
   from{box-shadow:0 0 0 1px rgba(255,209,102,.25);}
   to{box-shadow:0 0 0 4px rgba(255,209,102,.8);}
+}
+
+/* ---------- DESKTOP / MOBILE SWITCH POUR UPCOMING ---------- */
+.desktop-only { display:block; }
+.mobile-only  { display:none; }
+
+/* Cartes upcoming (mobile) */
+.upcoming-card{
+  /* .item a déjà le style de base */
+}
+
+/* ---------- BARRE DE COMMANDES LIVE ---------- */
+.live-controls{
+  margin-top:4px;
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+.live-controls .small{
+  font-size:.8rem;
+}
+.live-buttons{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+}
+.tag-danger{
+  background:#2a1414 !important;
+  border-color:var(--bad) !important;
+  color:#ffd3d3 !important;
+}
+
+/* ---------- POPUP CONFIRMATION FULL SCREEN ---------- */
+.confirm-overlay{
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,.75);
+  display:none;
+  align-items:center;
+  justify-content:center;
+  z-index:80;
+}
+.confirm-overlay.show{
+  display:flex;
+}
+.confirm-dialog{
+  background:#1d212c;
+  border:1px solid #2b3442;
+  border-radius:16px;
+  padding:20px;
+  max-width:360px;
+  width:90%;
+  box-shadow:0 18px 40px rgba(0,0,0,.85);
+}
+.confirm-title{
+  font-size:1.1rem;
+  font-weight:600;
+  margin-bottom:10px;
+}
+.confirm-text{
+  font-size:.9rem;
+  color:var(--sub);
+  margin:0 0 16px;
+}
+.confirm-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:8px;
+}
+.btn-secondary,
+.btn-danger{
+  border-radius:9999px;
+  padding:6px 14px;
+  border:1px solid #2b3442;
+  font-size:.9rem;
+  cursor:pointer;
+}
+.btn-secondary{
+  background:#1f2733;
+  color:#cfe3ff;
+}
+.btn-danger{
+  background:#2a1414;
+  border-color:var(--bad);
+  color:#ffd3d3;
 }
 
 /* ---------- RESPONSIVE : TABLETTES / MOBILES ---------- */
@@ -416,4 +501,8 @@ body {
   .table td{
     padding:8px 8px;
   }
+
+  /* Upcoming: on masque le tableau et on montre les cartes */
+  .desktop-only { display:none; }
+  .mobile-only  { display:flex; flex-direction:column; gap:8px; }
 }
