@@ -22,6 +22,11 @@ body {
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
 }
 
+/* Curseur main sur tous les boutons */
+button {
+  cursor: pointer;
+}
+
 /* ---------- LAYOUT GLOBAL ---------- */
 .wrap{
   max-width:1200px;
@@ -365,6 +370,13 @@ body {
 }
 .live-vis-inactive{
   opacity:0.55;
+}
+
+/* bouton désactivé (End live sur upcoming) */
+.btn-disabled{
+  opacity:0.4;
+  cursor: default;
+  pointer-events:none;
 }
 
 /* ---------- POPUP CONFIRMATION FULL SCREEN ---------- */

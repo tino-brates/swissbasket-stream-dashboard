@@ -452,28 +452,59 @@ function renderLive(){
     .sort((a,b)=>parseUTCDate(a.scheduledStart)-parseUTCDate(b.scheduledStart))
     .slice(0,3)
     .map(x=>({
+      id: x.id,
       title:x.title,
+      scheduledStart: x.scheduledStart,
       when:`${fmtDateUTC(x.scheduledStart)} ${fmtTimeUTC(x.scheduledStart)}`,
       url:x.url,
-      visibility:x.visibility||''
+      visibility:(x.visibility||'').toLowerCase()
     }));
 
   if(next3.length===0){return}
 
   next3.forEach(x=>{
+    const expanded = state.expandedLiveId === x.id;
+    const visLabel = x.visibility === 'private' ? t('visibility_private') : t('visibility_public');
+    const safeTitle = (x.title || '').replace(/'/g,"\\'");
     const el=document.createElement('div');
-    el.className='item upcoming-item';
+    el.className='item live-item upcoming-item' + (expanded ? ' live-item-expanded' : '');
     el.innerHTML=`
-      <div style="display:flex;align-items:center;gap:.6rem;min-width:0;">
-        <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.title}</div>
-        ${x.visibility && x.visibility.toLowerCase()==='private' ? `<span class="tag" style="background:#555;border-color:#444;">${t('private')}</span>` : ``}
+      <div class="live-item-header">
+        <div style="display:flex;align-items:center;gap:.6rem;min-width:0;">
+          <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.title}</div>
+          ${x.visibility === 'private' ? `<span class="tag" style="background:#555;border-color:#444;">${t('private')}</span>` : ``}
+        </div>
+        <div class="cell-center">
+          <span class="tag">${t('upcoming_tag')}</span>
+        </div>
+        <div class="date-soft" style="white-space:nowrap;">${x.when}</div>
+        <a class="tag" href="${x.url}" target="_blank" style="justify-self:end;" onclick="event.stopPropagation();">${t('open')}</a>
       </div>
-      <div class="cell-center">
-        <span class="tag">${t('upcoming_tag')}</span>
+      ${expanded ? `
+      <div class="live-controls">
+        <div class="muted small">${t('visibility_label')}: <strong>${visLabel}</strong></div>
+        <div class="live-buttons">
+          <button type="button"
+                  class="tag live-vis-btn ${x.visibility === 'public' ? 'live-vis-active' : 'live-vis-inactive'}"
+                  onclick="event.stopPropagation(); setLiveVisibility('${x.id}','public');">
+            ${t('set_public')}
+          </button>
+          <button type="button"
+                  class="tag live-vis-btn ${x.visibility === 'private' ? 'live-vis-active' : 'live-vis-inactive'}"
+                  onclick="event.stopPropagation(); setLiveVisibility('${x.id}','private');">
+            ${t('set_private')}
+          </button>
+          <button type="button"
+                  class="tag tag-danger btn-disabled"
+                  disabled
+                  onclick="event.stopPropagation();">
+            ${t('end_live')}
+          </button>
+        </div>
       </div>
-      <div class="date-soft" style="white-space:nowrap;">${x.when}</div>
-      <a class="tag" href="${x.url}" target="_blank" style="justify-self:end;">${t('open')}</a>
+      ` : ``}
     `;
+    el.addEventListener('click', ()=>{ toggleLiveControls(x.id); });
     box.appendChild(el);
   });
 }
@@ -689,7 +720,7 @@ function setLastUpdate(){
 
 /* ---------------- DATA LOADING ---------------- */
 async function fetchJSON(url){
-  const r = await fetch(url); // <<< plus de cache:'no-store'
+  const r = await fetch(url);
   if(!r.ok) throw new Error('http');
   return await r.json();
 }
