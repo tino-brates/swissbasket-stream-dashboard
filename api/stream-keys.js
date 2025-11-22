@@ -16,14 +16,8 @@ function pickCreds() {
   return (P.client_id && P.client_secret && P.refresh_token) ? P : D;
 }
 
-// ✅ version verbeuse pour voir l'erreur réelle du token
 async function getAccessToken() {
   const { client_id, client_secret, refresh_token } = pickCreds();
-
-  if (!client_id || !client_secret || !refresh_token) {
-    throw new Error("token-env-missing: client_id / client_secret / refresh_token manquants");
-  }
-
   const body = new URLSearchParams({
     client_id,
     client_secret,
@@ -35,13 +29,8 @@ async function getAccessToken() {
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body
   });
-  const text = await r.text();
-  let j;
-  try { j = JSON.parse(text); } catch { j = {}; }
-
-  if (!r.ok || !j.access_token) {
-    throw new Error(`token(${r.status}): ${text.slice(0, 400)}`);
-  }
+  const j = await r.json();
+  if (!r.ok || !j.access_token) throw new Error(`token(${r.status})`);
   return j.access_token;
 }
 
@@ -123,8 +112,25 @@ function ymdCH(dateInput) {
   return `${y}-${m}-${da}`;
 }
 
+// ---- CACHE ----
+let CACHE = {
+  ts: 0,
+  data: { items: [] },
+  backoffUntil: 0
+};
+const CACHE_TTL_MS = 180000; // 3 min
+const BACKOFF_MS = 300000;   // 5 min
+
 export default async function handler(req, res) {
   const debugFlag = req.query.debug === "1" || req.query.debug === "true";
+  const now = Date.now();
+
+  if (now < CACHE.backoffUntil && CACHE.data) {
+    return res.status(200).json(CACHE.data);
+  }
+  if (now - CACHE.ts < CACHE_TTL_MS && CACHE.data) {
+    return res.status(200).json(CACHE.data);
+  }
 
   try {
     const access = await getAccessToken();
@@ -144,21 +150,22 @@ export default async function handler(req, res) {
       const scheduled = cd.scheduledStartTime || sn.scheduledStartTime || null;
       const actual = cd.actualStartTime || null;
 
-      // 🔧 nouvelle logique : on classe "du jour" via scheduled surtout
-      let ymdScheduled = null;
-      let ymdActual = null;
-      if (scheduled) {
-        try { ymdScheduled = ymdCH(scheduled); } catch { ymdScheduled = null; }
-      }
+      let dateRef = null;
       if (actual) {
-        try { ymdActual = ymdCH(actual); } catch { ymdActual = null; }
+        dateRef = actual;
+      } else if (scheduled) {
+        dateRef = scheduled;
+      } else if (sn.publishedAt) {
+        dateRef = sn.publishedAt;
       }
 
-      let isToday = false;
-      if (ymdScheduled && ymdScheduled === todayCH) {
-        isToday = true;
-      } else if (!ymdScheduled && ymdActual && ymdActual === todayCH) {
-        isToday = true;
+      let ymd = null;
+      if (dateRef) {
+        try {
+          ymd = ymdCH(dateRef);
+        } catch {
+          ymd = null;
+        }
       }
 
       debugDates.push({
@@ -167,11 +174,11 @@ export default async function handler(req, res) {
         privacy,
         scheduled,
         actual,
-        ymdScheduled,
-        ymdActual
+        ymd
       });
 
-      if (!isToday) continue;
+      if (!dateRef || !ymd) continue;
+      if (ymd !== todayCH) continue;
 
       const isLive = st === "live";
       const isUpcomingLike = st === "ready" || st === "upcoming" || st === "created";
@@ -240,11 +247,23 @@ export default async function handler(req, res) {
       };
     }
 
+    CACHE = {
+      ts: now,
+      data: payload,
+      backoffUntil: 0
+    };
+
     res.status(200).json(payload);
   } catch (e) {
-    res.status(200).json({
+    const payload = {
       items: [],
       error: String(e)
-    });
+    };
+    CACHE = {
+      ts: Date.now(),
+      data: payload,
+      backoffUntil: Date.now() + BACKOFF_MS
+    };
+    res.status(200).json(payload);
   }
 }

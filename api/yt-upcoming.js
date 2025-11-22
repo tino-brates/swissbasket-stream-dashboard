@@ -1,4 +1,3 @@
-// api/yt-upcoming.js — upcoming robustes, avec pagination sur liveBroadcasts.mine
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const YT_BROADCASTS = "https://www.googleapis.com/youtube/v3/liveBroadcasts";
 const YT_SEARCH = "https://www.googleapis.com/youtube/v3/search";
@@ -44,44 +43,23 @@ async function channelIdForMine(accessToken) {
   return j?.items?.[0]?.id || null;
 }
 
-// ---------- liveBroadcasts.mine avec pagination ----------
+// NOTE: pas de broadcastStatus ici (sinon 400)
 async function listBroadcastsMineAll(accessToken) {
-  let items = [];
-  let pageToken = undefined;
-  let safety = 0;
-
-  while (true) {
-    const u = new URL(YT_BROADCASTS);
-    u.searchParams.set("part", "id,snippet,contentDetails,status");
-    u.searchParams.set("mine", "true");
-    u.searchParams.set("maxResults", "50");
-    if (pageToken) u.searchParams.set("pageToken", pageToken);
-
-    const r = await fetch(u.toString(), {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    });
-    const text = await r.text();
-    if (!r.ok) return items;
-
-    let j;
-    try { j = JSON.parse(text); } catch { return items; }
-
-    const batch = j.items || [];
-    items = items.concat(batch);
-
-    pageToken = j.nextPageToken;
-    safety += 1;
-    if (!pageToken || safety > 10) break;
-  }
-
-  return items;
+  const u = new URL(YT_BROADCASTS);
+  u.searchParams.set("part", "id,snippet,contentDetails,status");
+  u.searchParams.set("mine", "true");
+  u.searchParams.set("maxResults", "50");
+  const r = await fetch(u.toString(), { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!r.ok) return [];
+  const j = await r.json();
+  return j.items || [];
 }
 
 function isUpcoming(b) {
-  const life = (b?.status?.lifeCycleStatus || "").toLowerCase();
+  const life = (b?.status?.lifeCycleStatus || "").toLowerCase(); // created | ready | testing | live | complete | revoked | ...
   const sched = b?.contentDetails?.scheduledStartTime || b?.snippet?.scheduledStartTime || null;
   const hasFutureStart = sched ? new Date(sched).getTime() > Date.now() : false;
-  return hasFutureStart || life === "created" || life === "ready" || life === "upcoming";
+  return hasFutureStart || life === "created" || life === "ready";
 }
 
 async function searchUpcoming(accessToken, channelId) {
@@ -116,7 +94,25 @@ async function videosDetails(accessToken, ids) {
   return map;
 }
 
+// ---- CACHE ----
+let CACHE = {
+  ts: 0,
+  data: { items: [] },
+  backoffUntil: 0
+};
+const CACHE_TTL_MS = 180000; // 3 min
+const BACKOFF_MS = 300000;   // 5 min
+
 export default async function handler(req, res) {
+  const now = Date.now();
+
+  if (now < CACHE.backoffUntil && CACHE.data) {
+    return res.status(200).json(CACHE.data);
+  }
+  if (now - CACHE.ts < CACHE_TTL_MS && CACHE.data) {
+    return res.status(200).json(CACHE.data);
+  }
+
   try {
     const access = await getAccessToken();
 
@@ -155,18 +151,25 @@ export default async function handler(req, res) {
       }).filter(x => !!x.scheduledStart);
     }
 
-    const merged = [...mineUpcoming, ...publicItems];
-
-    const dedupMap = new Map();
-    merged.forEach(it => {
-      if (!dedupMap.has(it.id)) dedupMap.set(it.id, it);
-    });
-
-    const items = Array.from(dedupMap.values())
+    const items = [...mineUpcoming, ...publicItems]
       .sort((a,b)=>new Date(a.scheduledStart)-new Date(b.scheduledStart));
 
-    res.status(200).json({ items });
+    const payload = { items };
+
+    CACHE = {
+      ts: now,
+      data: payload,
+      backoffUntil: 0
+    };
+
+    res.status(200).json(payload);
   } catch (e) {
-    res.status(200).json({ items: [], error: String(e) });
+    const payload = { items: [], error: String(e) };
+    CACHE = {
+      ts: Date.now(),
+      data: payload,
+      backoffUntil: Date.now() + BACKOFF_MS
+    };
+    res.status(200).json(payload);
   }
 }

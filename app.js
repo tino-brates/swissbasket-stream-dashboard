@@ -202,15 +202,11 @@ function endOfNextWeekSunday(dt) {
 }
 
 function pad2(n){return n<10?`0${n}`:`${n}`}
-
-/* ⏱️ TIMER LIVE EN HH:MM:SS */
 function elapsedHM(start){
-  if(!start) return "00:00:00";
-  const secs = Math.max(0, Math.floor((Date.now() - parseUTCDate(start).getTime()) / 1000));
-  const h = Math.floor(secs / 3600);
-  const m = Math.floor((secs % 3600) / 60);
-  const s = secs % 60;
-  return `${pad2(h)}:${pad2(m)}:${pad2(s)}`;
+  if(!start) return "";
+  const secs=Math.max(0,Math.floor((Date.now()-parseUTCDate(start).getTime())/1000));
+  const h=Math.floor(secs/3600);const m=Math.floor((secs%3600)/60);const s=secs%60;
+  return h>0?`${pad2(h)}:${pad2(m)}:${pad2(s)}`:`${pad2(m)}:${pad2(s)}`;
 }
 
 function normProd(s){
@@ -807,8 +803,7 @@ loadIssues();
 loadHealth();
 loadStreamKeys();
 setInterval(loadCalendars, 10000);
-setInterval(loadYouTube, 60000);
+setInterval(loadYouTube, 90000);
 setInterval(loadIssues, 60000);
-setInterval(loadHealth, 30000);
-setInterval(loadStreamKeys, 60000);
+setInterval(loadStreamKeys, 90000);
 setInterval(()=>{ if (state.data.live && state.data.live.length){ renderLive(); } }, 1000);
