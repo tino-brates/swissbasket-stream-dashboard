@@ -320,8 +320,16 @@ function renderLateCard(ev, box){
 }
 
 /* --------- COMMANDES LIVE --------- */
-async function setLiveVisibility(id, privacy){
+/* 🔥 ICI : on ajoute la gestion du bouton "pending" */
+async function setLiveVisibility(id, privacy, btn){
   if(!id || !privacy) return;
+
+  // activer état pending sur le bouton cliqué
+  if (btn) {
+    btn.classList.add('btn-pending');
+    btn.disabled = true;
+  }
+
   try{
     await fetch('/api/live-control', {
       method:'POST',
@@ -331,6 +339,12 @@ async function setLiveVisibility(id, privacy){
     await loadYouTube();
   }catch(e){
     console.error('setLiveVisibility error', e);
+  } finally {
+    // désactiver état pending (même en cas d'erreur)
+    if (btn) {
+      btn.classList.remove('btn-pending');
+      btn.disabled = false;
+    }
   }
 }
 
@@ -415,12 +429,12 @@ function renderLive(){
           <div class="live-buttons">
             <button type="button"
                     class="tag live-vis-btn ${vis === 'public' ? 'live-vis-inactive' : 'live-vis-active'}"
-                    onclick="event.stopPropagation(); setLiveVisibility('${x.id}','public');">
+                    onclick="event.stopPropagation(); setLiveVisibility('${x.id}','public', this);">
               ${t('set_public')}
             </button>
             <button type="button"
                     class="tag live-vis-btn ${vis === 'private' ? 'live-vis-inactive' : 'live-vis-active'}"
-                    onclick="event.stopPropagation(); setLiveVisibility('${x.id}','private');">
+                    onclick="event.stopPropagation(); setLiveVisibility('${x.id}','private', this);">
               ${t('set_private')}
             </button>
             <button type="button"
@@ -486,12 +500,12 @@ function renderLive(){
         <div class="live-buttons">
           <button type="button"
                   class="tag live-vis-btn ${x.visibility === 'public' ? 'live-vis-inactive' : 'live-vis-active'}"
-                  onclick="event.stopPropagation(); setLiveVisibility('${x.id}','public');">
+                  onclick="event.stopPropagation(); setLiveVisibility('${x.id}','public', this);">
             ${t('set_public')}
           </button>
           <button type="button"
                   class="tag live-vis-btn ${x.visibility === 'private' ? 'live-vis-inactive' : 'live-vis-active'}"
-                  onclick="event.stopPropagation(); setLiveVisibility('${x.id}','private');">
+                  onclick="event.stopPropagation(); setLiveVisibility('${x.id}','private', this);">
             ${t('set_private')}
           </button>
           <button type="button"
