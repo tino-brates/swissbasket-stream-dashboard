@@ -1,3 +1,4 @@
+// ---------------- I18N ----------------
 const I18N = {
   fr: {
     title: "SwissBasket Streaming",
@@ -19,6 +20,7 @@ const I18N = {
     open: "Ouvrir",
     private: "Privé",
     upcoming_tag: "UPCOMING",
+    late_tag: "En retard",
     no_arena_issue: "Aucun problème signalé.",
     rest: "Time to rest 😴",
     nodata: "No data",
@@ -61,6 +63,7 @@ const I18N = {
     open: "Open",
     private: "Private",
     upcoming_tag: "UPCOMING",
+    late_tag: "Late",
     no_arena_issue: "No issues reported.",
     rest: "Time to rest 😴",
     nodata: "No data",
@@ -292,7 +295,7 @@ function renderLateAlerts(){
       <div class="alert-icon">⚠️</div>
       <div class="alert-body">
         <div class="alert-title">${ev.title}</div>
-        <div class="alert-meta">${t('status_upcoming')} • ${whenTxt}</div>
+        <div class="alert-meta">${t('late_tag')} • ${whenTxt}</div>
       </div>
       <button class="alert-close" onclick="dismissLateAlert('${keyJs}')">×</button>
     `;
@@ -300,56 +303,109 @@ function renderLateAlerts(){
   });
 }
 
-/* --------- ITEM LATE DANS LIVE --------- */
+/* --------- ITEM LATE DANS LIVE (avec commandes) --------- */
 function renderLateCard(ev, box){
-  const when = ev.scheduledStart ? `${fmtDateUTC(ev.scheduledStart)} ${fmtTimeUTC(ev.scheduledStart)}` : '';
+  const expanded = state.expandedLiveId === ev.id;
+  const vis = (ev.visibility || '').toLowerCase();
+  const visLabel = vis === 'private' ? t('visibility_private') : t('visibility_public');
+  const when = ev.scheduledStart
+    ? `${fmtDateUTC(ev.scheduledStart)} ${fmtTimeUTC(ev.scheduledStart)}`
+    : '';
+  const safeTitle = (ev.title || '').replace(/'/g,"\\'");
+
   const el = document.createElement('div');
-  el.className = 'item item-late';
+  el.className = 'item live-item item-late' + (expanded ? ' live-item-expanded' : '');
   el.innerHTML = `
-    <div style="display:flex;align-items:center;gap:.6rem;min-width:0;">
-      <span class="dot-live"></span>
-      <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${ev.title}</div>
+    <div class="live-item-header">
+      <div style="display:flex;align-items:center;gap:.6rem;min-width:0;">
+        <span class="dot-live"></span>
+        <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+          ${ev.title}
+        </div>
+      </div>
+      <div class="cell-center">
+        <span class="tag">${t('late_tag')}</span>
+      </div>
+      <div class="date-soft" style="white-space:nowrap;">${when}</div>
+      <a class="tag"
+         href="${ev.url}"
+         target="_blank"
+         style="justify-self:end;"
+         onclick="event.stopPropagation();">
+        ${t('open')}
+      </a>
     </div>
-    <div class="cell-center">
-      <span class="tag">${t('status_upcoming')}</span>
+    ${expanded ? `
+    <div class="live-controls">
+      <div class="muted small">
+        ${t('visibility_label')}: <strong>${visLabel}</strong>
+      </div>
+      <div class="live-buttons">
+        <button type="button"
+                class="tag live-vis-btn ${vis === 'public' ? 'live-vis-inactive' : 'live-vis-active'}"
+                onclick="event.stopPropagation(); setLiveVisibility('${ev.id}','public', this);">
+          ${t('set_public')}
+        </button>
+        <button type="button"
+                class="tag live-vis-btn ${vis === 'private' ? 'live-vis-inactive' : 'live-vis-active'}"
+                onclick="event.stopPropagation(); setLiveVisibility('${ev.id}','private', this);">
+          ${t('set_private')}
+        </button>
+        <button type="button"
+                class="tag tag-danger btn-disabled"
+                disabled
+                onclick="event.stopPropagation();">
+          ${t('end_live')}
+        </button>
+      </div>
     </div>
-    <div class="date-soft" style="white-space:nowrap;">${when}</div>
-    <a class="tag" href="${ev.url}" target="_blank" style="justify-self:end;">${t('open')}</a>
+    ` : ``}
   `;
+
+  el.addEventListener('click', ()=>{ toggleLiveControls(ev.id); });
   box.appendChild(el);
 }
 
 /* --------- COMMANDES LIVE --------- */
-/* 🔥 ICI : on ajoute la gestion du bouton "pending" */
 async function setLiveVisibility(id, privacy, btn){
-  if (!id || !privacy) return;
+  if(!id || !privacy) return;
 
-  // état en attente
-  if (btn) {
-    btn.classList.add("btn-pending");
+  // mettre les boutons en "pending"
+  let buttonsSameRow = [];
+  if (btn && btn.parentElement) {
+    buttonsSameRow = Array.from(btn.parentElement.querySelectorAll('.live-vis-btn'));
+    buttonsSameRow.forEach(b => {
+      b.classList.add('btn-pending');
+      b.disabled = true;
+    });
+  } else if (btn) {
+    btn.classList.add('btn-pending');
     btn.disabled = true;
   }
 
-  try {
+  try{
     await fetch('/api/live-control', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ action:'setVisibility', id, privacy })
     });
-
-    // recharge data
     await loadYouTube();
-  } catch (err) {
-    console.error("Visibility change failed:", err);
-  } finally {
-    // retire état chargé
-    if (btn) {
-      btn.classList.remove("btn-pending");
+  }catch(e){
+    console.error('setLiveVisibility error', e);
+  }finally{
+    // en pratique loadYouTube va re-render et ces boutons vont disparaître,
+    // mais si jamais ça échoue on enlève le "pending".
+    if (buttonsSameRow.length) {
+      buttonsSameRow.forEach(b => {
+        b.classList.remove('btn-pending');
+        b.disabled = false;
+      });
+    } else if (btn) {
+      btn.classList.remove('btn-pending');
       btn.disabled = false;
     }
   }
 }
-
 
 function openEndLiveConfirm(id, title){
   pendingEndLive = { id, title };
@@ -807,11 +863,33 @@ async function loadStreamKeys(){
 }
 
 /* ---------------- UI ---------------- */
-document.getElementById('refreshBtn').addEventListener('click',()=>{loadCalendars();loadYouTube();loadIssues();loadHealth();loadStreamKeys();});
-document.getElementById('prodFilter').addEventListener('change',e=>{state.filterProd=e.target.value;renderUpcoming()});
-document.getElementById('searchInput').addEventListener('input',e=>{state.search=e.target.value;renderUpcoming()});
-document.getElementById('tabRange1').addEventListener('click',()=>{state.activeUpcomingTab='RANGE1';document.getElementById('tabRange1').classList.add('active');document.getElementById('tabRange2').classList.remove('active');renderUpcoming()});
-document.getElementById('tabRange2').addEventListener('click',()=>{state.activeUpcomingTab='RANGE2';document.getElementById('tabRange2').classList.add('active');document.getElementById('tabRange1').classList.remove('active');renderUpcoming()});
+document.getElementById('refreshBtn').addEventListener('click',()=>{
+  loadCalendars();
+  loadYouTube();
+  loadIssues();
+  loadHealth();
+  loadStreamKeys();
+});
+document.getElementById('prodFilter').addEventListener('change',e=>{
+  state.filterProd=e.target.value;
+  renderUpcoming();
+});
+document.getElementById('searchInput').addEventListener('input',e=>{
+  state.search=e.target.value;
+  renderUpcoming();
+});
+document.getElementById('tabRange1').addEventListener('click',()=>{
+  state.activeUpcomingTab='RANGE1';
+  document.getElementById('tabRange1').classList.add('active');
+  document.getElementById('tabRange2').classList.remove('active');
+  renderUpcoming();
+});
+document.getElementById('tabRange2').addEventListener('click',()=>{
+  state.activeUpcomingTab='RANGE2';
+  document.getElementById('tabRange2').classList.add('active');
+  document.getElementById('tabRange1').classList.remove('active');
+  renderUpcoming();
+});
 
 /* ---------------- Kickoff ---------------- */
 loadCalendars();
