@@ -322,31 +322,34 @@ function renderLateCard(ev, box){
 /* --------- COMMANDES LIVE --------- */
 /* 🔥 ICI : on ajoute la gestion du bouton "pending" */
 async function setLiveVisibility(id, privacy, btn){
-  if(!id || !privacy) return;
+  if (!id || !privacy) return;
 
-  // activer état pending sur le bouton cliqué
+  // état en attente
   if (btn) {
-    btn.classList.add('btn-pending');
+    btn.classList.add("btn-pending");
     btn.disabled = true;
   }
 
-  try{
+  try {
     await fetch('/api/live-control', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action:'setVisibility', id, privacy })
     });
+
+    // recharge data
     await loadYouTube();
-  }catch(e){
-    console.error('setLiveVisibility error', e);
+  } catch (err) {
+    console.error("Visibility change failed:", err);
   } finally {
-    // désactiver état pending (même en cas d'erreur)
+    // retire état chargé
     if (btn) {
-      btn.classList.remove('btn-pending');
+      btn.classList.remove("btn-pending");
       btn.disabled = false;
     }
   }
 }
+
 
 function openEndLiveConfirm(id, title){
   pendingEndLive = { id, title };
