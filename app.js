@@ -702,9 +702,9 @@ function renderUpcoming(){
       tbody.appendChild(tr);
     });
 
-    // masque le dernier header (YT Event) si présent
-    const headRow = document.querySelector('#upcomingTable thead tr');
-    if (headRow && headRow.lastElementChild) {
+    // masque le dernier header (YT Event) si présent et que la table a encore 8 colonnes
+    const headRow = document.querySelector('.table thead tr');
+    if (headRow && headRow.children.length > 7) {
       headRow.lastElementChild.style.display = 'none';
     }
   }
