@@ -40,11 +40,13 @@ function toDateTimeCH(dateStr,timeStr){
     const hh=tt?parseInt(tt[1],10):0;
     const mn=tt?parseInt(tt[2],10):0;
     const ss=tt&&tt[3]?parseInt(tt[3],10):0;
-    return new Date(Date.UTC(yyyy,mm-1,dd,hh,mn,ss));
+    return new Date(Date.UTC(yyyy,mm-1,dd,hh-1,mn,ss));
   }
   const t=Date.parse(ds+(ts?` ${ts}`:""));
   return Number.isNaN(t)?null:new Date(t);
 }
+
+// gardé si jamais tu veux encore l’utiliser plus tard côté backend
 function normProd(s){
   const v=(s||"").toUpperCase();
   if(v.includes("KEEMOTION")) return "Keemotion";
@@ -88,16 +90,22 @@ export default async function handler(req,res){
 
       return {
         datetime: dt ? dt.toISOString() : null,
-        teamA, teamB, arena,
-        production: prodRaw,
+        teamA,
+        teamB,
+        arena,
+        production: prodRaw,          // ⚠️ on laisse brut, sans filtrer
         youtubeEventId: yt,
         competition: comp
       };
     })
     .filter(x => x.datetime)
-    .filter(x => { const t=new Date(x.datetime).getTime(); return t>=now && t<=horizon; })
-    .map(x => ({ ...x, production: normProd(x.production) }))
-    .filter(x => !!x.production);
+    .filter(x => {
+      const t=new Date(x.datetime).getTime();
+      return t>=now && t<=horizon;
+    });
+    // ❌ plus de normalisation / filtre sur production ici :
+    // .map(x => ({ ...x, production: normProd(x.production) }))
+    // .filter(x => !!x.production);
 
     res.status(200).json({ items });
   }catch(e){
