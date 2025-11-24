@@ -385,7 +385,6 @@ function renderLateCard(ev, box){
 async function setLiveVisibility(id, privacy, btn){
   if(!id || !privacy) return;
 
-  // mettre les boutons en "pending"
   let buttonsSameRow = [];
   if (btn && btn.parentElement) {
     buttonsSameRow = Array.from(btn.parentElement.querySelectorAll('.live-vis-btn'));
@@ -404,14 +403,13 @@ async function setLiveVisibility(id, privacy, btn){
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ action:'setVisibility', id, privacy })
     });
-    // première mise à jour immédiate
-    await loadYouTube();
-    // deuxième refresh quelques secondes plus tard pour rattraper YouTube
-    setTimeout(()=>{ loadYouTube(); }, 5000);
+    // refresh forcé juste après action
+    await loadYouTube(true);
+    // 2e refresh 5s après pour rattraper un éventuel lag YouTube
+    setTimeout(()=>{ loadYouTube(true); }, 5000);
   }catch(e){
     console.error('setLiveVisibility error', e);
   }finally{
-    // Si jamais le render ne s'est pas fait, on enlève le pending
     if (buttonsSameRow.length) {
       buttonsSameRow.forEach(b => {
         b.classList.remove('btn-pending');
@@ -456,7 +454,7 @@ async function confirmEndLive(){
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ action:'endLive', id })
     });
-    await loadYouTube();
+    await loadYouTube(true);
   }catch(e){
     console.error('endLive error', e);
   }
@@ -833,8 +831,9 @@ async function loadCalendars(){
   renderUpcoming(); setLastUpdate();
 }
 
-async function loadYouTube(){
-  let payload = await fetchJSON('/api/live').catch(()=>({
+async function loadYouTube(force = false){
+  const qs = force ? `?force=1&ts=${Date.now()}` : "";
+  let payload = await fetchJSON('/api/live' + qs).catch(()=>({
     live:[],
     upcoming:[],
     meta:{source:'err', lastError:'fetch /api/live'}
@@ -894,7 +893,7 @@ async function loadStreamKeys(){
 /* ---------------- UI ---------------- */
 document.getElementById('refreshBtn').addEventListener('click',()=>{
   loadCalendars();
-  loadYouTube();
+  loadYouTube(true);
   loadIssues();
   loadHealth();
   loadStreamKeys();
@@ -927,7 +926,7 @@ loadIssues();
 loadHealth();
 loadStreamKeys();
 setInterval(loadCalendars, 10000);
-setInterval(loadYouTube, 90000);
+setInterval(()=>{ loadYouTube(true); }, 90000);
 setInterval(loadIssues, 60000);
 setInterval(loadStreamKeys, 90000);
 setInterval(()=>{ if (state.data.live && state.data.live.length){ renderLive(); } }, 1000);

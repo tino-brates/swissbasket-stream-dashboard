@@ -157,10 +157,21 @@ function isUpcomingLike(b) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=300");
+  // ⚠️ Désactive le cache HTTP côté Vercel
+  res.setHeader("Cache-Control", "no-store");
+
   const now = Date.now();
-  if (now - CACHE.ts < CACHE_TTL_MS) return res.status(200).json(CACHE.data);
-  if (now < CACHE.backoffUntil) return res.status(200).json(CACHE.data);
+  const force = req.query && (req.query.force === "1" || req.query.force === "true");
+
+  // ⚠️ si pas force=1, on utilise notre cache in-memory
+  if (!force) {
+    if (now - CACHE.ts < CACHE_TTL_MS) {
+      return res.status(200).json(CACHE.data);
+    }
+    if (now < CACHE.backoffUntil) {
+      return res.status(200).json(CACHE.data);
+    }
+  }
 
   const meta = { source: "liveBroadcasts", lastError: "" };
 
@@ -204,9 +215,12 @@ export default async function handler(req, res) {
       });
     }
 
-    CACHE.data = { live, upcoming, meta };
+    const data = { live, upcoming, meta };
+
+    CACHE.data = data;
     CACHE.ts = now;
-    return res.status(200).json(CACHE.data);
+
+    return res.status(200).json(data);
   } catch (e) {
     meta.lastError = String(e);
     try {
