@@ -11,8 +11,9 @@ const I18N = {
     upcoming_streams: "Upcoming Streams",
     tab_to_sunday: "Jusqu’au prochain dimanche",
     tab_this_next: "Semaine actuelle + suivante",
-    filter_all: "Tous (streamés)",
+    filter_all: "Tous",
     filter_swish_manual: "Swish Live + Manual",
+    filter_not_streamed: "Not streamed",
     search_ph: "Rechercher équipe, arène, prod, ligue",
     th_date: "Date", th_time: "Heure", th_league:"Ligue",
     th_team_a:"Équipe A", th_team_b:"Équipe B",
@@ -54,8 +55,9 @@ const I18N = {
     upcoming_streams: "Upcoming Streams",
     tab_to_sunday: "Until next Sunday",
     tab_this_next: "This week + next",
-    filter_all: "All (streamed)",
+    filter_all: "All",
     filter_swish_manual: "Swish Live + Manual",
+    filter_not_streamed: "Not streamed",
     search_ph: "Search team, arena, prod, league",
     th_date: "Date", th_time: "Time", th_league:"League",
     th_team_a:"Team A", th_team_b:"Team B",
@@ -221,7 +223,11 @@ function normProd(s){
   if(v==='TV') return 'TV';
   return '';
 }
-function prodGroup(p){if(p==='Swish Live'||p==='Manual')return'SwishManual';return p||''}
+function prodGroup(p){
+  if(p === 'Swish Live' || p === 'Manual') return 'SwishManual';
+  if(p === 'Not streamed') return 'NotStreamed';
+  return p || '';
+}
 function badgeForStatus(s){const map={perfect:'status-perfect',good:'status-good',bad:'status-bad',nodata:'status-nodata'};return map[s]||'status-nodata'}
 function badgeForIssue(s){const map={sufficient:'tag-ok',insufficient:'tag-warn',offline:'tag-error',unknown:'tag-warn'};return map[s]||'tag-warn'}
 
@@ -370,7 +376,6 @@ function renderLateCard(ev, box){
 async function setLiveVisibility(id, privacy, btn){
   if(!id || !privacy) return;
 
-  // mettre les boutons en "pending"
   let buttonsSameRow = [];
   if (btn && btn.parentElement) {
     buttonsSameRow = Array.from(btn.parentElement.querySelectorAll('.live-vis-btn'));
@@ -390,11 +395,10 @@ async function setLiveVisibility(id, privacy, btn){
       body: JSON.stringify({ action:'setVisibility', id, privacy })
     });
     await loadYouTube();
+    setTimeout(loadYouTube, 5000);
   }catch(e){
     console.error('setLiveVisibility error', e);
   }finally{
-    // en pratique loadYouTube va re-render et ces boutons vont disparaître,
-    // mais si jamais ça échoue on enlève le "pending".
     if (buttonsSameRow.length) {
       buttonsSameRow.forEach(b => {
         b.classList.remove('btn-pending');
@@ -650,14 +654,19 @@ function renderUpcoming(){
   const mob = document.getElementById('upcomingMobile');
   const search=state.search.trim().toLowerCase();
 
-  const rows=state.data.upcoming
-    .map(x=>({...x,prod:normProd(x.production),group:prodGroup(normProd(x.production))}))
-    .filter(x=>x.prod)
-    .filter(x=>inActiveTabRange(x.datetime))
-    .filter(x=>state.filterProd==='ALL'?true:x.group===state.filterProd)
+  const rows = state.data.upcoming
+    .map(x => {
+      const rawProd = normProd(x.production);
+      const prod = rawProd || 'Not streamed';
+      const group = prodGroup(prod);
+      return { ...x, prod, group };
+    })
+    .filter(x => inActiveTabRange(x.datetime))
+    .filter(x => state.filterProd === 'ALL' ? true : x.group === state.filterProd)
     .filter(x=>{
       if(!search) return true;
-      return [x.teamA,x.teamB,x.arena,x.production,x.competition].some(v=>(v||'').toLowerCase().includes(search));
+      return [x.teamA,x.teamB,x.arena,x.production,x.competition]
+        .some(v=>(v||'').toLowerCase().includes(search));
     });
 
   const sorted = rows.sort((a,b)=>parseSheetDate(a.datetime)-parseSheetDate(b.datetime));
@@ -674,8 +683,7 @@ function renderUpcoming(){
         <td>${x.teamA}</td>
         <td>${x.teamB}</td>
         <td>${x.arena}</td>
-        <td>${x.prod}</td>
-        <td>${x.youtubeEventId?`<a target="_blank" href="https://www.youtube.com/live/${x.youtubeEventId}">${x.youtubeEventId}</a>`:''}</td>`;
+        <td>${x.prod}</td>`;
       tbody.appendChild(tr);
     });
   }
