@@ -105,12 +105,18 @@ const BACKOFF_MS = 300000;   // 5 min
 
 export default async function handler(req, res) {
   const now = Date.now();
+  const force = req.query && (req.query.force === "1" || req.query.force === "true");
 
-  if (now < CACHE.backoffUntil && CACHE.data) {
-    return res.status(200).json(CACHE.data);
-  }
-  if (now - CACHE.ts < CACHE_TTL_MS && CACHE.data) {
-    return res.status(200).json(CACHE.data);
+  // on désactive le cache HTTP (CDN / navigateur)
+  res.setHeader("Cache-Control", "no-store");
+
+  if (!force) {
+    if (now < CACHE.backoffUntil && CACHE.data) {
+      return res.status(200).json(CACHE.data);
+    }
+    if (now - CACHE.ts < CACHE_TTL_MS && CACHE.data) {
+      return res.status(200).json(CACHE.data);
+    }
   }
 
   try {

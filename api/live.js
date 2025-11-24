@@ -139,6 +139,7 @@ async function atomFallback() {
   const upcoming = entries
     .filter(x => x.lbc === "upcoming")
     .map(x => ({
+      id: x.id,
       title: x.title || "Upcoming",
       scheduledStart: null,
       url: `https://www.youtube.com/watch?v=${x.id}`,
@@ -157,13 +158,12 @@ function isUpcomingLike(b) {
 }
 
 export default async function handler(req, res) {
-  // ⚠️ Désactive le cache HTTP côté Vercel
-  res.setHeader("Cache-Control", "no-store");
-
   const now = Date.now();
   const force = req.query && (req.query.force === "1" || req.query.force === "true");
 
-  // ⚠️ si pas force=1, on utilise notre cache in-memory
+  // Désactive le cache HTTP côté CDN/navigateur, on gère en interne
+  res.setHeader("Cache-Control", "no-store");
+
   if (!force) {
     if (now - CACHE.ts < CACHE_TTL_MS) {
       return res.status(200).json(CACHE.data);
@@ -215,12 +215,9 @@ export default async function handler(req, res) {
       });
     }
 
-    const data = { live, upcoming, meta };
-
-    CACHE.data = data;
+    CACHE.data = { live, upcoming, meta };
     CACHE.ts = now;
-
-    return res.status(200).json(data);
+    return res.status(200).json(CACHE.data);
   } catch (e) {
     meta.lastError = String(e);
     try {

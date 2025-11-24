@@ -115,7 +115,6 @@ window.addEventListener("DOMContentLoaded", ()=>{
   if (en) en.addEventListener("click",()=>{ LANG="en"; localStorage.setItem("LANG","en"); applyI18n(); renderAll(); });
   applyI18n();
 
-  // Ajout auto de l’option "Not streamed" dans le menu déroulant
   const prodSel = document.getElementById('prodFilter');
   if (prodSel && !prodSel.querySelector('option[value="NotStreamed"]')) {
     const opt = document.createElement('option');
@@ -381,6 +380,28 @@ function renderLateCard(ev, box){
   box.appendChild(el);
 }
 
+/* --------- PATCH LOCAL VISIBILITÉ --------- */
+function applyVisibilityLocal(id, privacy) {
+  if (!id || !privacy) return;
+  const p = privacy.toLowerCase();
+
+  if (state.data.live && state.data.live.length) {
+    state.data.live = state.data.live.map(ev =>
+      ev.id === id ? { ...ev, visibility: p } : ev
+    );
+  }
+
+  if (state.data.ytUpcoming && state.data.ytUpcoming.length) {
+    state.data.ytUpcoming = state.data.ytUpcoming.map(ev =>
+      ev.id === id ? { ...ev, visibility: p } : ev
+    );
+  }
+
+  renderLive();
+  renderNext90();
+  renderLateAlerts();
+}
+
 /* --------- COMMANDES LIVE --------- */
 async function setLiveVisibility(id, privacy, btn){
   if(!id || !privacy) return;
@@ -398,14 +419,18 @@ async function setLiveVisibility(id, privacy, btn){
   }
 
   try{
-    await fetch('/api/live-control', {
+    const r = await fetch('/api/live-control', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ action:'setVisibility', id, privacy })
     });
-    // refresh forcé juste après action
+    const j = await r.json().catch(()=>({}));
+
+    if (j.ok !== false) {
+      applyVisibilityLocal(id, privacy);
+    }
+
     await loadYouTube(true);
-    // 2e refresh 5s après pour rattraper un éventuel lag YouTube
     setTimeout(()=>{ loadYouTube(true); }, 5000);
   }catch(e){
     console.error('setLiveVisibility error', e);
@@ -700,7 +725,6 @@ function renderUpcoming(){
       tbody.appendChild(tr);
     });
 
-    // masque le dernier header (YT Event) si présent et que la table a encore 8 colonnes
     const headRow = document.querySelector('.table thead tr');
     if (headRow && headRow.children.length > 7) {
       headRow.lastElementChild.style.display = 'none';
@@ -853,7 +877,8 @@ async function loadYouTube(force = false){
 
   let ytUp = { items: [] };
   try {
-    ytUp = await fetchJSON('/api/yt-upcoming');
+    const qsUp = force ? `?force=1&ts=${Date.now()}` : "";
+    ytUp = await fetchJSON('/api/yt-upcoming' + qsUp);
   } catch(e) {
     ytUp = { items: [] };
   }
