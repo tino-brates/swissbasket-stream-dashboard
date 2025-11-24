@@ -11,9 +11,8 @@ const I18N = {
     upcoming_streams: "Upcoming Streams",
     tab_to_sunday: "Jusqu’au prochain dimanche",
     tab_this_next: "Semaine actuelle + suivante",
-    filter_all: "Tous",
+    filter_all: "Tous (streamés)",
     filter_swish_manual: "Swish Live + Manual",
-    filter_not_streamed: "Not streamed",
     search_ph: "Rechercher équipe, arène, prod, ligue",
     th_date: "Date", th_time: "Heure", th_league:"Ligue",
     th_team_a:"Équipe A", th_team_b:"Équipe B",
@@ -55,9 +54,8 @@ const I18N = {
     upcoming_streams: "Upcoming Streams",
     tab_to_sunday: "Until next Sunday",
     tab_this_next: "This week + next",
-    filter_all: "All",
+    filter_all: "All (streamed)",
     filter_swish_manual: "Swish Live + Manual",
-    filter_not_streamed: "Not streamed",
     search_ph: "Search team, arena, prod, league",
     th_date: "Date", th_time: "Time", th_league:"League",
     th_team_a:"Team A", th_team_b:"Team B",
@@ -116,6 +114,15 @@ window.addEventListener("DOMContentLoaded", ()=>{
   if (fr) fr.addEventListener("click",()=>{ LANG="fr"; localStorage.setItem("LANG","fr"); applyI18n(); renderAll(); });
   if (en) en.addEventListener("click",()=>{ LANG="en"; localStorage.setItem("LANG","en"); applyI18n(); renderAll(); });
   applyI18n();
+
+  // Ajout auto de l’option "Not streamed" dans le menu déroulant
+  const prodSel = document.getElementById('prodFilter');
+  if (prodSel && !prodSel.querySelector('option[value="NotStreamed"]')) {
+    const opt = document.createElement('option');
+    opt.value = 'NotStreamed';
+    opt.textContent = 'Not streamed';
+    prodSel.appendChild(opt);
+  }
 
   const cCancel = document.getElementById('confirmCancel');
   const cOk = document.getElementById('confirmOk');
@@ -206,7 +213,7 @@ function endOfNextWeekSunday(dt) {
   return e;
 }
 
-function pad2(n){return n<10?`0${n}`:`${n}`}
+function pad2(n){return n<10?`0${n}`:`${n}`;}
 function elapsedHM(start){
   if(!start) return "";
   const secs=Math.max(0,Math.floor((Date.now()-parseUTCDate(start).getTime())/1000));
@@ -223,11 +230,13 @@ function normProd(s){
   if(v==='TV') return 'TV';
   return '';
 }
+
 function prodGroup(p){
-  if(p === 'Swish Live' || p === 'Manual') return 'SwishManual';
-  if(p === 'Not streamed') return 'NotStreamed';
-  return p || '';
+  if(p==='Swish Live'||p==='Manual') return 'SwishManual';
+  if(!p) return 'NotStreamed';
+  return p;
 }
+
 function badgeForStatus(s){const map={perfect:'status-perfect',good:'status-good',bad:'status-bad',nodata:'status-nodata'};return map[s]||'status-nodata'}
 function badgeForIssue(s){const map={sufficient:'tag-ok',insufficient:'tag-warn',offline:'tag-error',unknown:'tag-warn'};return map[s]||'tag-warn'}
 
@@ -376,6 +385,7 @@ function renderLateCard(ev, box){
 async function setLiveVisibility(id, privacy, btn){
   if(!id || !privacy) return;
 
+  // mettre les boutons en "pending"
   let buttonsSameRow = [];
   if (btn && btn.parentElement) {
     buttonsSameRow = Array.from(btn.parentElement.querySelectorAll('.live-vis-btn'));
@@ -394,11 +404,14 @@ async function setLiveVisibility(id, privacy, btn){
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ action:'setVisibility', id, privacy })
     });
+    // première mise à jour immédiate
     await loadYouTube();
-    setTimeout(loadYouTube, 5000);
+    // deuxième refresh quelques secondes plus tard pour rattraper YouTube
+    setTimeout(()=>{ loadYouTube(); }, 5000);
   }catch(e){
     console.error('setLiveVisibility error', e);
   }finally{
+    // Si jamais le render ne s'est pas fait, on enlève le pending
     if (buttonsSameRow.length) {
       buttonsSameRow.forEach(b => {
         b.classList.remove('btn-pending');
@@ -537,7 +550,7 @@ function renderLive(){
       visibility:(x.visibility||'').toLowerCase()
     }));
 
-  if(next3.length===0){return}
+  if(next3.length===0){return;}
 
   next3.forEach(x=>{
     const expanded = state.expandedLiveId === x.id;
@@ -615,7 +628,7 @@ function renderNext90(){
       .map(x=>({ title:`${x.teamA} vs ${x.teamB}`, time:fmtTimeSheet(x.datetime), url:'' }));
     soon = sheetSoon;
   }
-  if(!soon.length){const e=document.createElement('div');e.className='muted';e.textContent=t('rest');box.appendChild(e);return}
+  if(!soon.length){const e=document.createElement('div');e.className='muted';e.textContent=t('rest');box.appendChild(e);return;}
   soon.forEach(x=>{
     const el=document.createElement('div');el.className='item';
     el.innerHTML=`
@@ -654,19 +667,21 @@ function renderUpcoming(){
   const mob = document.getElementById('upcomingMobile');
   const search=state.search.trim().toLowerCase();
 
-  const rows = state.data.upcoming
-    .map(x => {
-      const rawProd = normProd(x.production);
-      const prod = rawProd || 'Not streamed';
-      const group = prodGroup(prod);
-      return { ...x, prod, group };
+  const rows=state.data.upcoming
+    .map(x=>{
+      const normalized = normProd(x.production);
+      const prodLabel = normalized || 'Not streamed';
+      const group = prodGroup(normalized);
+      return { ...x, prod: prodLabel, group };
     })
-    .filter(x => inActiveTabRange(x.datetime))
-    .filter(x => state.filterProd === 'ALL' ? true : x.group === state.filterProd)
+    .filter(x=>inActiveTabRange(x.datetime))
     .filter(x=>{
       if(!search) return true;
-      return [x.teamA,x.teamB,x.arena,x.production,x.competition]
-        .some(v=>(v||'').toLowerCase().includes(search));
+      return [x.teamA,x.teamB,x.arena,x.production,x.competition].some(v=>(v||'').toLowerCase().includes(search));
+    })
+    .filter(x=>{
+      if(state.filterProd==='ALL') return true;
+      return x.group === state.filterProd;
     });
 
   const sorted = rows.sort((a,b)=>parseSheetDate(a.datetime)-parseSheetDate(b.datetime));
@@ -686,6 +701,12 @@ function renderUpcoming(){
         <td>${x.prod}</td>`;
       tbody.appendChild(tr);
     });
+
+    // masque le dernier header (YT Event) si présent
+    const headRow = document.querySelector('#upcomingTable thead tr');
+    if (headRow && headRow.lastElementChild) {
+      headRow.lastElementChild.style.display = 'none';
+    }
   }
 
   if(mob){
