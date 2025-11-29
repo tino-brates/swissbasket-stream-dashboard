@@ -115,7 +115,6 @@ window.addEventListener("DOMContentLoaded", ()=>{
   if (en) en.addEventListener("click",()=>{ LANG="en"; localStorage.setItem("LANG","en"); applyI18n(); renderAll(); });
   applyI18n();
 
-  // Ajout auto de l’option "Not streamed" dans le menu déroulant
   const prodSel = document.getElementById('prodFilter');
   if (prodSel && !prodSel.querySelector('option[value="NotStreamed"]')) {
     const opt = document.createElement('option');
@@ -381,11 +380,32 @@ function renderLateCard(ev, box){
   box.appendChild(el);
 }
 
+/* --------- PATCH LOCAL VISIBILITÉ --------- */
+function applyVisibilityLocal(id, privacy) {
+  if (!id || !privacy) return;
+  const p = privacy.toLowerCase();
+
+  if (state.data.live && state.data.live.length) {
+    state.data.live = state.data.live.map(ev =>
+      ev.id === id ? { ...ev, visibility: p } : ev
+    );
+  }
+
+  if (state.data.ytUpcoming && state.data.ytUpcoming.length) {
+    state.data.ytUpcoming = state.data.ytUpcoming.map(ev =>
+      ev.id === id ? { ...ev, visibility: p } : ev
+    );
+  }
+
+  renderLive();
+  renderNext90();
+  renderLateAlerts();
+}
+
 /* --------- COMMANDES LIVE --------- */
 async function setLiveVisibility(id, privacy, btn){
   if(!id || !privacy) return;
 
-  // mettre les boutons en "pending"
   let buttonsSameRow = [];
   if (btn && btn.parentElement) {
     buttonsSameRow = Array.from(btn.parentElement.querySelectorAll('.live-vis-btn'));
@@ -399,19 +419,22 @@ async function setLiveVisibility(id, privacy, btn){
   }
 
   try{
-    await fetch('/api/live-control', {
+    const r = await fetch('/api/live-control', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ action:'setVisibility', id, privacy })
     });
-    // première mise à jour immédiate
-    await loadYouTube();
-    // deuxième refresh quelques secondes plus tard pour rattraper YouTube
-    setTimeout(()=>{ loadYouTube(); }, 5000);
+    const j = await r.json().catch(()=>({}));
+
+    if (j.ok !== false) {
+      applyVisibilityLocal(id, privacy);
+    }
+
+    await loadYouTube(true);
+    setTimeout(()=>{ loadYouTube(true); }, 5000);
   }catch(e){
     console.error('setLiveVisibility error', e);
   }finally{
-    // Si jamais le render ne s'est pas fait, on enlève le pending
     if (buttonsSameRow.length) {
       buttonsSameRow.forEach(b => {
         b.classList.remove('btn-pending');
@@ -456,7 +479,7 @@ async function confirmEndLive(){
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ action:'endLive', id })
     });
-    await loadYouTube();
+    await loadYouTube(true);
   }catch(e){
     console.error('endLive error', e);
   }
@@ -702,9 +725,8 @@ function renderUpcoming(){
       tbody.appendChild(tr);
     });
 
-    // masque le dernier header (YT Event) si présent
-    const headRow = document.querySelector('#upcomingTable thead tr');
-    if (headRow && headRow.lastElementChild) {
+    const headRow = document.querySelector('.table thead tr');
+    if (headRow && headRow.children.length > 7) {
       headRow.lastElementChild.style.display = 'none';
     }
   }
@@ -833,8 +855,9 @@ async function loadCalendars(){
   renderUpcoming(); setLastUpdate();
 }
 
-async function loadYouTube(){
-  let payload = await fetchJSON('/api/live').catch(()=>({
+async function loadYouTube(force = false){
+  const qs = force ? `?force=1&ts=${Date.now()}` : "";
+  let payload = await fetchJSON('/api/live' + qs).catch(()=>({
     live:[],
     upcoming:[],
     meta:{source:'err', lastError:'fetch /api/live'}
@@ -854,7 +877,8 @@ async function loadYouTube(){
 
   let ytUp = { items: [] };
   try {
-    ytUp = await fetchJSON('/api/yt-upcoming');
+    const qsUp = force ? `?force=1&ts=${Date.now()}` : "";
+    ytUp = await fetchJSON('/api/yt-upcoming' + qsUp);
   } catch(e) {
     ytUp = { items: [] };
   }
@@ -894,7 +918,7 @@ async function loadStreamKeys(){
 /* ---------------- UI ---------------- */
 document.getElementById('refreshBtn').addEventListener('click',()=>{
   loadCalendars();
-  loadYouTube();
+  loadYouTube(true);
   loadIssues();
   loadHealth();
   loadStreamKeys();
@@ -927,7 +951,7 @@ loadIssues();
 loadHealth();
 loadStreamKeys();
 setInterval(loadCalendars, 10000);
-setInterval(loadYouTube, 90000);
+setInterval(()=>{ loadYouTube(true); }, 90000);
 setInterval(loadIssues, 60000);
 setInterval(loadStreamKeys, 90000);
 setInterval(()=>{ if (state.data.live && state.data.live.length){ renderLive(); } }, 1000);
